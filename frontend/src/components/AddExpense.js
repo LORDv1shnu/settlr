@@ -1,19 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useExpense } from '../context/ExpenseContext';
-import { useNavigate } from 'react-router-dom';
 
-const AddExpense = ({ selectedGroup, onClose, onExpenseAdded }) => {
+const AddExpense = ({ selectedGroup, onClose, onExpenseAdded, currentUser }) => {
   const {
     createExpense,
     fetchUsers,
     users,
-    currentUser,
     groups,
     fetchUserGroups,
     fetchUserExpenses,
     loading
   } = useExpense();
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
@@ -199,8 +196,6 @@ const AddExpense = ({ selectedGroup, onClose, onExpenseAdded }) => {
         setTimeout(() => {
           if (onClose) {
             onClose();
-          } else {
-            navigate('/dashboard');
           }
         }, 2000); // Increased timeout to show success message
       } else {
@@ -238,12 +233,9 @@ const AddExpense = ({ selectedGroup, onClose, onExpenseAdded }) => {
           <div className="bg-white p-6 rounded-lg shadow-lg">
             <h2 className="text-xl font-bold mb-4">Add Expense</h2>
             <p className="text-gray-600 mb-4">You need to create or join a group first to add expenses.</p>
-            <button
-              onClick={() => navigate('/groups')}
-              className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors"
-            >
-              Go to Groups
-            </button>
+            <div className="text-center text-gray-500">
+              Please go to Groups to create or join a group first.
+            </div>
           </div>
         </div>
       </div>
@@ -509,7 +501,7 @@ const AddExpense = ({ selectedGroup, onClose, onExpenseAdded }) => {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/dashboard')}
+                onClick={() => {/* Navigation handled by parent component */}}
                 disabled={loading}
                 className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
               >
