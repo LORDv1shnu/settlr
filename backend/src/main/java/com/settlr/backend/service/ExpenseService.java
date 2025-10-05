@@ -9,15 +9,21 @@ import com.settlr.backend.entity.User;
 import com.settlr.backend.repository.ExpenseRepository;
 import com.settlr.backend.repository.ExpenseGroupRepository;
 import com.settlr.backend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Service
 public class ExpenseService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ExpenseService.class);
 
     @Autowired
     private ExpenseRepository expenseRepository;
@@ -52,26 +58,60 @@ public class ExpenseService {
     }
 
     public ExpenseDTO createExpense(ExpenseDTO expenseDTO) {
-        User paidByUser = userRepository.findById(expenseDTO.getPaidById())
-                .orElseThrow(() -> new RuntimeException("User not found with id: " + expenseDTO.getPaidById()));
+        logger.info("ExpenseService.createExpense() - Creating expense: description={}, amount={}, paidById={}, groupId={}",
+                   expenseDTO.getDescription(), expenseDTO.getAmount(), expenseDTO.getPaidById(), expenseDTO.getGroupId());
+        logger.debug("ExpenseService.createExpense() - Split between: {}", expenseDTO.getSplitBetween());
 
-        ExpenseGroup group = expenseGroupRepository.findById(expenseDTO.getGroupId())
-                .orElseThrow(() -> new RuntimeException("Group not found with id: " + expenseDTO.getGroupId()));
+        try {
+            logger.debug("ExpenseService.createExpense() - Finding user with ID: {}", expenseDTO.getPaidById());
+            User paidByUser = userRepository.findById(expenseDTO.getPaidById())
+                    .orElseThrow(() -> {
+                        logger.error("ExpenseService.createExpense() - User not found with id: {}", expenseDTO.getPaidById());
+                        return new RuntimeException("User not found with id: " + expenseDTO.getPaidById());
+                    });
+            logger.info("ExpenseService.createExpense() - Found paidBy user: {} ({})", paidByUser.getName(), paidByUser.getEmail());
 
-        Expense expense = convertToEntity(expenseDTO);
-        expense.setPaidBy(paidByUser);
-        expense.setGroup(group);
+            logger.debug("ExpenseService.createExpense() - Finding group with ID: {}", expenseDTO.getGroupId());
+            ExpenseGroup group = expenseGroupRepository.findById(expenseDTO.getGroupId())
+                    .orElseThrow(() -> {
+                        logger.error("ExpenseService.createExpense() - Group not found with id: {}", expenseDTO.getGroupId());
+                        return new RuntimeException("Group not found with id: " + expenseDTO.getGroupId());
+                    });
+            logger.info("ExpenseService.createExpense() - Found group: {} with {} members", group.getName(), group.getMembers().size());
 
-        // If no split members specified, split among all group members
-        if (expenseDTO.getSplitBetween() == null || expenseDTO.getSplitBetween().isEmpty()) {
-            List<Long> memberIds = group.getMembers().stream()
-                    .map(User::getId)
-                    .collect(Collectors.toList());
-            expense.setSplitBetween(memberIds);
+            Expense expense = convertToEntity(expenseDTO);
+            expense.setPaidBy(paidByUser);
+            expense.setGroup(group);
+
+            // If no split members specified, split among all group members
+            if (expenseDTO.getSplitBetween() == null || expenseDTO.getSplitBetween().isEmpty()) {
+                List<Long> memberIds = group.getMembers().stream()
+                        .map(User::getId)
+                        .collect(Collectors.toList());
+                expense.setSplitBetween(memberIds);
+                logger.info("ExpenseService.createExpense() - No split members specified, splitting among all {} group members: {}",
+                           memberIds.size(), memberIds);
+            } else {
+                logger.info("ExpenseService.createExpense() - Using specified split members: {}", expenseDTO.getSplitBetween());
+            }
+
+            logger.debug("ExpenseService.createExpense() - Saving expense to database");
+            Expense savedExpense = expenseRepository.save(expense);
+            logger.info("ExpenseService.createExpense() - Successfully saved expense to database with ID: {}", savedExpense.getId());
+
+            ExpenseDTO result = convertToDTO(savedExpense);
+            logger.info("ExpenseService.createExpense() - Expense creation completed successfully for: {}", expenseDTO.getDescription());
+            return result;
+
+        } catch (RuntimeException e) {
+            logger.error("ExpenseService.createExpense() - Business logic error for expense {}: {}",
+                        expenseDTO.getDescription(), e.getMessage(), e);
+            throw e;
+        } catch (Exception e) {
+            logger.error("ExpenseService.createExpense() - Unexpected database error for expense {}: {}",
+                        expenseDTO.getDescription(), e.getMessage(), e);
+            throw new RuntimeException("Failed to create expense: " + e.getMessage(), e);
         }
-
-        Expense savedExpense = expenseRepository.save(expense);
-        return convertToDTO(savedExpense);
     }
 
     public ExpenseDTO updateExpense(Long id, ExpenseDTO expenseDTO) {
@@ -104,6 +144,51 @@ public class ExpenseService {
     public Double getTotalExpensesByGroupId(Long groupId) {
         Double total = expenseRepository.getTotalExpensesByGroupId(groupId);
         return total != null ? total : 0.0;
+    }
+
+    /**
+     * Calculate balances for each user in a group
+     * Positive balance = user owes money
+     * Negative balance = user is owed money
+     */
+    public Map<Long, Double> calculateUserBalances(Long groupId) {
+        logger.info("ExpenseService.calculateUserBalances() - Calculating balances for group {}", groupId);
+
+        Map<Long, Double> balances = new HashMap<>();
+        List<Expense> expenses = expenseRepository.findByGroupIdOrderByCreatedAtDesc(groupId);
+
+        logger.info("Found {} expenses for group {}", expenses.size(), groupId);
+
+        for (Expense expense : expenses) {
+            Long paidById = expense.getPaidBy().getId();
+            List<Long> splitBetween = expense.getSplitBetween();
+            double totalAmount = expense.getAmount().doubleValue();
+            double amountPerPerson = expense.getAmountPerPerson().doubleValue();
+
+            logger.debug("Processing expense: {} - Amount: {}, Paid by: {}, Split between: {} users",
+                        expense.getDescription(), totalAmount, paidById, splitBetween.size());
+
+            // Initialize balances for users involved in this expense
+            balances.putIfAbsent(paidById, 0.0);
+            for (Long userId : splitBetween) {
+                balances.putIfAbsent(userId, 0.0);
+            }
+
+            // Each person in splitBetween owes their share
+            for (Long userId : splitBetween) {
+                balances.put(userId, balances.get(userId) + amountPerPerson);
+            }
+
+            // The person who paid gets credited for the full amount
+            // This effectively means they paid totalAmount but only owe amountPerPerson
+            // So their net change is: +amountPerPerson (from above) - totalAmount = amountPerPerson - totalAmount
+            balances.put(paidById, balances.get(paidById) - totalAmount);
+
+            logger.debug("Updated balances after expense {}: {}", expense.getDescription(), balances);
+        }
+
+        logger.info("Final balances for group {}: {}", groupId, balances);
+        return balances;
     }
 
     // Helper methods for conversion

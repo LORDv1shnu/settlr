@@ -4,23 +4,23 @@ import { TrendingUp, Users, DollarSign, ArrowRight, CheckCircle, Clock } from 'l
 import { format } from 'date-fns';
 
 const SettleUp = () => {
-  const { state, actions } = useExpense();
+  const { currentUser, groups, fetchUserGroups, getGroupBalances } = useExpense();
   const [groupBalances, setGroupBalances] = useState({});
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [settlements, setSettlements] = useState([]);
 
   useEffect(() => {
-    if (state.currentUser) {
-      actions.loadGroups(state.currentUser.id);
+    if (currentUser) {
+      fetchUserGroups(currentUser.id);
     }
-  }, [state.currentUser]);
+  }, [currentUser, fetchUserGroups]);
 
   useEffect(() => {
     const loadBalances = async () => {
       const balances = {};
-      for (const group of state.groups) {
+      for (const group of groups) {
         try {
-          const groupBalance = await actions.getGroupBalances(group.id);
+          const groupBalance = await getGroupBalances(group.id);
           balances[group.id] = groupBalance;
         } catch (error) {
           console.error('Error loading balance for group:', group.id);
@@ -29,10 +29,10 @@ const SettleUp = () => {
       setGroupBalances(balances);
     };
 
-    if (state.groups.length > 0) {
+    if (groups.length > 0) {
       loadBalances();
     }
-  }, [state.groups]);
+  }, [groups, getGroupBalances]);
 
   // Calculate optimal settlements for a group
   const calculateSettlements = (groupId) => {
@@ -71,10 +71,10 @@ const SettleUp = () => {
     return settlements;
   };
 
-  const getUserBalance = (groupId, userName) => {
+  const getUserBalance = (groupId, userId) => {
     const balance = groupBalances[groupId];
     if (!balance || !balance.userBalances) return 0;
-    return balance.userBalances[userName] || 0;
+    return balance.userBalances[userId] || 0;
   };
 
   const getGroupSettlements = (groupId) => {
@@ -82,193 +82,165 @@ const SettleUp = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Settle Up</h1>
-          <p className="text-gray-600">Review balances and settle debts with your friends</p>
+    <div className="min-h-screen bg-gray-50 pt-16">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Settle Up</h1>
+            <p className="text-gray-600">Review balances and settle debts with your friends</p>
+          </div>
+          <div className="bg-green-100 p-3 rounded-full">
+            <TrendingUp className="w-6 h-6 text-green-600" />
+          </div>
         </div>
-        <div className="bg-green-100 p-3 rounded-full">
-          <TrendingUp className="w-6 h-6 text-green-600" />
+
+        {/* Overall Summary */}
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Overall Balance</h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(() => {
+              let totalOwed = 0;
+              let totalToReceive = 0;
+              let settledGroups = 0;
+
+              groups.forEach(group => {
+                const userBalance = getUserBalance(group.id, currentUser?.id); // Changed from currentUser?.name to currentUser?.id
+                console.log(`🔍 Group ${group.name} (ID: ${group.id}) - User ${currentUser?.id} balance:`, userBalance);
+
+                if (userBalance > 0) {
+                  totalOwed += userBalance;
+                } else if (userBalance < 0) {
+                  totalToReceive += Math.abs(userBalance);
+                } else {
+                  settledGroups++;
+                }
+              });
+
+              console.log('💰 Final SettleUp totals - Owed:', totalOwed, 'To Receive:', totalToReceive, 'Settled Groups:', settledGroups);
+
+              return (
+                <>
+                  <div className="text-center p-4 bg-red-50 rounded-lg">
+                    <DollarSign className="w-8 h-8 text-red-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-red-600">₹{totalOwed.toFixed(2)}</div>
+                    <div className="text-sm text-gray-600">You owe</div>
+                  </div>
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <DollarSign className="w-8 h-8 text-green-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-green-600">₹{totalToReceive.toFixed(2)}</div>
+                    <div className="text-sm text-gray-600">You're owed</div>
+                  </div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <CheckCircle className="w-8 h-8 text-blue-600 mx-auto mb-2" />
+                    <div className="text-2xl font-bold text-blue-600">{settledGroups}</div>
+                    <div className="text-sm text-gray-600">Settled groups</div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
-      </div>
 
-      {/* Overall Summary */}
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Overall Balance</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(() => {
-            let totalOwed = 0;
-            let totalToReceive = 0;
-            let settledGroups = 0;
-
-            state.groups.forEach(group => {
-              const userBalance = getUserBalance(group.id, state.currentUser?.name);
-              if (userBalance > 0) {
-                totalOwed += userBalance;
-              } else if (userBalance < 0) {
-                totalToReceive += Math.abs(userBalance);
-              } else {
-                settledGroups++;
-              }
-            });
-
-            return (
-              <>
-                <div className="text-center p-4 bg-red-50 rounded-lg">
-                  <p className="text-sm text-gray-600">You Owe</p>
-                  <p className="text-2xl font-bold text-red-600">₹{totalOwed.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-green-50 rounded-lg">
-                  <p className="text-sm text-gray-600">You're Owed</p>
-                  <p className="text-2xl font-bold text-green-600">₹{totalToReceive.toFixed(2)}</p>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Settled Groups</p>
-                  <p className="text-2xl font-bold text-gray-900">{settledGroups}</p>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
-
-      {/* Groups List */}
-      {state.groups.length > 0 ? (
-        <div className="space-y-4">
-          {state.groups.map((group) => {
-            const balance = groupBalances[group.id];
-            const userBalance = getUserBalance(group.id, state.currentUser?.name);
+        {/* Groups List */}
+        <div className="space-y-6">
+          {groups.map(group => {
+            const userBalance = getUserBalance(group.id, currentUser?.id);
             const groupSettlements = getGroupSettlements(group.id);
-            const userInvolved = groupSettlements.some(s =>
-              s.from === state.currentUser?.name || s.to === state.currentUser?.name
-            );
+            const isSettled = Math.abs(userBalance) < 0.01;
 
             return (
-              <div key={group.id} className="bg-white rounded-lg shadow-sm border">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="bg-purple-100 p-2 rounded-full">
-                        <Users size={20} className="text-purple-600" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{group.name}</h3>
-                        <p className="text-sm text-gray-500">
-                          {group.members?.length || 0} members • ₹{balance?.totalExpense?.toFixed(2) || '0.00'} total
-                        </p>
-                      </div>
+              <div key={group.id} className="bg-white rounded-lg shadow-sm p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-purple-100 p-2 rounded-full">
+                      <Users className="w-5 h-5 text-purple-600" />
                     </div>
-                    <div className="text-right">
-                      <p className={`font-semibold ${userBalance > 0 ? 'text-red-600' : userBalance < 0 ? 'text-green-600' : 'text-gray-900'}`}>
-                        {userBalance > 0 ? `You owe ₹${userBalance.toFixed(2)}` :
-                         userBalance < 0 ? `You're owed ₹${Math.abs(userBalance).toFixed(2)}` :
-                         'All settled up!'}
-                      </p>
-                      {userBalance === 0 && (
-                        <div className="flex items-center justify-end text-green-600 text-sm mt-1">
-                          <CheckCircle size={16} className="mr-1" />
-                          <span>Settled</span>
-                        </div>
-                      )}
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{group.name}</h3>
+                      <p className="text-sm text-gray-500">{group.members?.length} members</p>
                     </div>
                   </div>
-
-                  {/* Member Balances */}
-                  {balance && balance.userBalances && (
-                    <div className="border-t pt-4">
-                      <h4 className="font-medium text-gray-900 mb-3">Member Balances</h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {Object.entries(balance.userBalances).map(([userName, userBalance]) => (
-                          <div key={userName} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                            <span className={`font-medium ${userName === state.currentUser?.name ? 'text-green-600' : 'text-gray-900'}`}>
-                              {userName} {userName === state.currentUser?.name ? '(You)' : ''}
-                            </span>
-                            <span className={`text-sm ${userBalance > 0 ? 'text-red-600' : userBalance < 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                              {userBalance > 0 ? `Owes ₹${userBalance.toFixed(2)}` :
-                               userBalance < 0 ? `Owed ₹${Math.abs(userBalance).toFixed(2)}` :
-                               'Settled'}
-                            </span>
-                          </div>
-                        ))}
+                  <div className="text-right">
+                    {isSettled ? (
+                      <div className="flex items-center space-x-2 text-green-600">
+                        <CheckCircle className="w-5 h-5" />
+                        <span className="font-medium">Settled up</span>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Suggested Settlements */}
-                  {groupSettlements.length > 0 && (
-                    <div className="border-t pt-4 mt-4">
-                      <h4 className="font-medium text-gray-900 mb-3">Suggested Settlements</h4>
-                      <div className="space-y-3">
-                        {groupSettlements.map((settlement, index) => (
-                          <div key={index} className={`flex items-center justify-between p-3 rounded-lg ${
-                            settlement.from === state.currentUser?.name || settlement.to === state.currentUser?.name
-                              ? 'bg-blue-50 border border-blue-200'
-                              : 'bg-gray-50'
-                          }`}>
-                            <div className="flex items-center space-x-3">
-                              <span className="font-medium text-gray-900">
-                                {settlement.from}
-                              </span>
-                              <ArrowRight size={16} className="text-gray-400" />
-                              <span className="font-medium text-gray-900">
-                                {settlement.to}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-semibold text-green-600">
-                                ₹{settlement.amount.toFixed(2)}
-                              </span>
-                              {(settlement.from === state.currentUser?.name || settlement.to === state.currentUser?.name) && (
-                                <p className="text-xs text-blue-600 mt-1">You're involved</p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
+                    ) : (
+                      <div className={`font-medium ${userBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                        {userBalance > 0 ? `You owe ₹${userBalance.toFixed(2)}` : `You're owed ₹${Math.abs(userBalance).toFixed(2)}`}
                       </div>
-                    </div>
-                  )}
-
-                  {/* Group Stats */}
-                  <div className="border-t pt-4 mt-4">
-                    <div className="grid grid-cols-3 gap-4 text-center text-sm">
-                      <div>
-                        <p className="text-gray-500">Per Person</p>
-                        <p className="font-medium">₹{balance?.perPersonShare?.toFixed(2) || '0.00'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Total Expenses</p>
-                        <p className="font-medium">₹{balance?.totalExpense?.toFixed(2) || '0.00'}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">Members</p>
-                        <p className="font-medium">{balance?.memberCount || 0}</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Group Members Balances */}
+                <div className="mb-4">
+                  <h4 className="font-medium text-gray-900 mb-2">Member Balances</h4>
+                  <div className="space-y-2">
+                    {group.members?.map(member => {
+                      const memberBalance = getUserBalance(group.id, member.id); // Changed from member.name to member.id
+                      return (
+                        <div key={member.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded">
+                          <span className="text-sm font-medium">{member.name}</span>
+                          <span className={`text-sm font-medium ${
+                            memberBalance > 0 ? 'text-red-600' :
+                            memberBalance < 0 ? 'text-green-600' :
+                            'text-gray-600'
+                          }`}>
+                            {memberBalance > 0 ? `Owes ₹${memberBalance.toFixed(2)}` :
+                             memberBalance < 0 ? `Owed ₹${Math.abs(memberBalance).toFixed(2)}` :
+                             'Settled'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Suggested Settlements */}
+                {groupSettlements.length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-gray-900 mb-2">Suggested Settlements</h4>
+                    <div className="space-y-2">
+                      {groupSettlements.map((settlement, index) => (
+                        <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <span className="font-medium text-gray-900">{settlement.from}</span>
+                            <ArrowRight className="w-4 h-4 text-blue-600" />
+                            <span className="font-medium text-gray-900">{settlement.to}</span>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <span className="font-bold text-blue-600">₹{settlement.amount.toFixed(2)}</span>
+                            <button className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors">
+                              Settle
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {isSettled && (
+                  <div className="text-center py-4 text-green-600">
+                    <CheckCircle className="w-8 h-8 mx-auto mb-2" />
+                    <p className="font-medium">All settled up in this group!</p>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-      ) : (
-        <div className="text-center py-12">
-          <TrendingUp size={64} className="mx-auto text-gray-300 mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No groups to settle</h3>
-          <p className="text-gray-600 mb-6">Join or create groups to start tracking expenses</p>
-        </div>
-      )}
 
-      {/* Settlement Tips */}
-      <div className="bg-blue-50 rounded-lg p-6">
-        <h3 className="font-medium text-blue-900 mb-3">💡 Settlement Tips</h3>
-        <ul className="text-sm text-blue-800 space-y-2">
-          <li>• Settlements are automatically optimized to minimize the number of transactions</li>
-          <li>• You can settle up using UPI, cash, or bank transfers</li>
-          <li>• Keep track of payments made outside the app by updating expense records</li>
-          <li>• Regular settlements help maintain good relationships with friends</li>
-        </ul>
+        {groups.length === 0 && (
+          <div className="text-center py-12">
+            <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No groups found</h3>
+            <p className="text-gray-600">Join or create a group to start settling expenses</p>
+          </div>
+        )}
       </div>
     </div>
   );

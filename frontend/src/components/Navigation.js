@@ -4,12 +4,12 @@ import { useExpense } from '../context/ExpenseContext';
 import { Home, Users, Plus, TrendingUp, LogOut } from 'lucide-react';
 
 const Navigation = () => {
-  const { state, actions } = useExpense();
+  const { currentUser, setCurrentUser } = useExpense();
   const location = useLocation();
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    actions.setCurrentUser(null);
+    setCurrentUser(null);
   };
 
   const navItems = [
@@ -52,10 +52,10 @@ const Navigation = () => {
           <div className="flex items-center space-x-4">
             <div className="hidden md:block text-right">
               <div className="text-sm font-medium text-gray-900">
-                {state.currentUser?.name}
+                {currentUser?.name}
               </div>
               <div className="text-xs text-gray-500">
-                {state.currentUser?.email}
+                {currentUser?.email}
               </div>
             </div>
             <button

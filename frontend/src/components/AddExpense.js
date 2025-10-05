@@ -1,283 +1,522 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useExpense } from '../context/ExpenseContext';
-import { Receipt, Users, DollarSign, FileText, Tag } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
-const AddExpense = () => {
-  const { state, actions } = useExpense();
+const AddExpense = ({ selectedGroup, onClose, onExpenseAdded }) => {
+  const {
+    createExpense,
+    fetchUsers,
+    users,
+    currentUser,
+    groups,
+    fetchUserGroups,
+    fetchUserExpenses,
+    loading
+  } = useExpense();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     description: '',
     amount: '',
-    category: 'Food',
-    notes: '',
-    groupId: '',
-    paidById: state.currentUser?.id || ''
+    paidById: currentUser?.id || '',
+    groupId: selectedGroup?.id || '',
+    splitBetween: []
   });
-  const [errors, setErrors] = useState({});
 
-  const categories = [
-    'Food', 'Transportation', 'Accommodation', 'Entertainment',
-    'Shopping', 'Bills', 'Healthcare', 'Education', 'Other'
-  ];
+  const [selectedMembers, setSelectedMembers] = useState([]);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [currentSelectedGroup, setCurrentSelectedGroup] = useState(selectedGroup);
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false);
 
+  // Load initial data only once
   useEffect(() => {
-    if (state.currentUser) {
-      actions.loadGroups(state.currentUser.id);
-      setFormData(prev => ({ ...prev, paidById: state.currentUser.id }));
-    }
-  }, [state.currentUser]);
+    if (!hasLoadedInitialData) {
+      const loadData = async () => {
+        try {
+          await fetchUsers();
+          if (currentUser && !selectedGroup) {
+            await fetchUserGroups(currentUser.id);
+          }
+        } catch (error) {
+          console.error('Error loading initial data:', error);
+        } finally {
+          setHasLoadedInitialData(true);
+        }
+      };
 
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.description.trim()) {
-      newErrors.description = 'Description is required';
+      loadData();
     }
-    
-    if (!formData.amount || parseFloat(formData.amount) <= 0) {
-      newErrors.amount = 'Amount must be greater than 0';
+  }, [fetchUsers, fetchUserGroups, currentUser, selectedGroup, hasLoadedInitialData]);
+
+  // Update form when group changes
+  useEffect(() => {
+    if (selectedGroup || currentSelectedGroup) {
+      const group = selectedGroup || currentSelectedGroup;
+      setFormData(prev => ({
+        ...prev,
+        groupId: group.id
+      }));
+      // Pre-select all group members for splitting
+      const memberIds = group.members?.map(member => member.id) || [];
+      setSelectedMembers(memberIds);
+      setFormData(prev => ({
+        ...prev,
+        splitBetween: memberIds
+      }));
     }
-    
-    if (!formData.groupId) {
-      newErrors.groupId = 'Please select a group';
+  }, [selectedGroup, currentSelectedGroup]);
+
+  // Set default paidById only if it's empty (initial load)
+  useEffect(() => {
+    if (currentUser && !formData.paidById) {
+      setFormData(prev => ({
+        ...prev,
+        paidById: currentUser.id
+      }));
     }
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  }, [currentUser, formData.paidById]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleGroupChange = (e) => {
+    const groupId = parseInt(e.target.value);
+    const group = groups.find(g => g.id === groupId);
+    setCurrentSelectedGroup(group);
+
+    setFormData(prev => ({
+      ...prev,
+      groupId: groupId,
+      splitBetween: group?.members?.map(member => member.id) || []
+    }));
+    setSelectedMembers(group?.members?.map(member => member.id) || []);
+  };
+
+  const handleMemberToggle = (userId) => {
+    setSelectedMembers(prev => {
+      const newSelection = prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId];
+
+      setFormData(prevForm => ({
+        ...prevForm,
+        splitBetween: newSelection
+      }));
+
+      return newSelection;
+    });
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    if (!validateForm()) return;
+    setError('');
+    setSuccess('');
+
+    // Validation
+    if (!formData.description.trim()) {
+      setError('Description is required');
+      return;
+    }
+
+    if (!formData.amount || parseFloat(formData.amount) <= 0) {
+      setError('Please enter a valid amount');
+      return;
+    }
+
+    if (!formData.paidById) {
+      setError('Please select who paid');
+      return;
+    }
+
+    if (!formData.groupId) {
+      setError('Group is required');
+      return;
+    }
+
+    if (formData.splitBetween.length === 0) {
+      setError('Please select at least one person to split with');
+      return;
+    }
 
     try {
-      const selectedGroup = state.groups.find(g => g.id === parseInt(formData.groupId));
-      const paidByUser = selectedGroup?.members?.find(m => m.id === parseInt(formData.paidById));
-
       const expenseData = {
-        description: formData.description,
+        ...formData,
         amount: parseFloat(formData.amount),
-        category: formData.category,
-        notes: formData.notes,
-        paidBy: {
-          id: parseInt(formData.paidById),
-          name: paidByUser?.name || state.currentUser?.name,
-          email: paidByUser?.email || state.currentUser?.email
-        },
-        group: {
-          id: parseInt(formData.groupId),
-          name: selectedGroup?.name
-        }
+        paidById: parseInt(formData.paidById),
+        groupId: parseInt(formData.groupId),
+        splitBetween: formData.splitBetween.map(id => parseInt(id))
       };
 
-      await actions.createExpense(expenseData);
+      console.log('Submitting expense data:', expenseData);
 
-      // Reset form
-      setFormData({
-        description: '',
-        amount: '',
-        category: 'Food',
-        notes: '',
-        groupId: '',
-        paidById: state.currentUser?.id || ''
-      });
+      const newExpense = await createExpense(expenseData);
 
-      // Navigate to dashboard
-      navigate('/dashboard');
+      // Verify expense was created successfully
+      if (newExpense && newExpense.id) {
+        console.log('✅ Expense created successfully with ID:', newExpense.id);
+        setSuccess(`Expense added successfully! (ID: ${newExpense.id})`);
+
+        // Refresh data to show the new expense
+        try {
+          console.log('🔄 Refreshing data after expense creation...');
+
+          // Refresh user groups (which should include updated expense data)
+          if (currentUser) {
+            await fetchUserGroups(currentUser.id);
+            await fetchUserExpenses(currentUser.id);
+          }
+
+          console.log('✅ Data refresh completed');
+        } catch (refreshError) {
+          console.error('⚠️ Error refreshing data:', refreshError);
+          // Don't fail the whole operation for refresh errors
+        }
+
+        // Reset form
+        setFormData({
+          description: '',
+          amount: '',
+          paidById: currentUser?.id || '',
+          groupId: selectedGroup?.id || currentSelectedGroup?.id || '',
+          splitBetween: selectedGroup?.members?.map(member => member.id) || currentSelectedGroup?.members?.map(member => member.id) || []
+        });
+
+        // Reset selected members
+        const group = selectedGroup || currentSelectedGroup;
+        setSelectedMembers(group?.members?.map(member => member.id) || []);
+
+        // Notify parent component if used as modal
+        if (onExpenseAdded) {
+          onExpenseAdded(newExpense);
+        }
+
+        // Auto-close/redirect after success
+        setTimeout(() => {
+          if (onClose) {
+            onClose();
+          } else {
+            navigate('/dashboard');
+          }
+        }, 2000); // Increased timeout to show success message
+      } else {
+        console.error('❌ Expense creation failed - no ID returned');
+        setError('Failed to create expense. Please check the server logs.');
+      }
+
     } catch (error) {
-      console.error('Failed to create expense:', error);
-      setErrors({ submit: 'Failed to create expense. Please try again.' });
+      console.error('❌ Error creating expense:', error);
+      setError(error.message || 'Failed to add expense. Please try again.');
     }
   };
 
-  const selectedGroup = state.groups.find(g => g.id === parseInt(formData.groupId));
+  const activeGroup = selectedGroup || currentSelectedGroup;
 
-  return (
-    <div className="max-w-2xl mx-auto">
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        {/* Header */}
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="bg-green-100 p-3 rounded-full">
-            <Receipt className="w-6 h-6 text-green-600" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Add Expense</h1>
-            <p className="text-gray-600">Record a new shared expense</p>
+  // Show loading while initial data is being fetched
+  if (!hasLoadedInitialData) {
+    return (
+      <div className="min-h-screen bg-gray-50 pt-16">
+        <div className="max-w-md mx-auto pt-8">
+          <div className="bg-white p-6 rounded-lg shadow-lg text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-500 mx-auto mb-4"></div>
+            <p>Loading...</p>
           </div>
         </div>
+      </div>
+    );
+  }
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-6">
+  // If used as standalone page and no group selected
+  if (!selectedGroup && !currentSelectedGroup && groups.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 pt-16">
+        <div className="max-w-md mx-auto pt-8">
+          <div className="bg-white p-6 rounded-lg shadow-lg">
+            <h2 className="text-xl font-bold mb-4">Add Expense</h2>
+            <p className="text-gray-600 mb-4">You need to create or join a group first to add expenses.</p>
+            <button
+              onClick={() => navigate('/groups')}
+              className="w-full bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 transition-colors"
+            >
+              Go to Groups
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Modal mode (when selectedGroup is provided)
+  if (selectedGroup) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-lg max-w-md mx-auto">
+        <h2 className="text-xl font-bold mb-4">Add Expense to {selectedGroup.name}</h2>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+            {success}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
           {/* Description */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <FileText size={16} className="inline mr-1" />
-              Description
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description *
             </label>
             <input
               type="text"
+              name="description"
               value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
-                errors.description ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="e.g., Dinner at restaurant, Uber ride, Groceries"
+              onChange={handleInputChange}
+              placeholder="e.g., Lunch at restaurant"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              required
             />
-            {errors.description && (
-              <p className="text-red-500 text-sm mt-1">{errors.description}</p>
-            )}
           </div>
 
           {/* Amount */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <DollarSign size={16} className="inline mr-1" />
-              Amount (₹)
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Amount *
             </label>
             <input
               type="number"
-              step="0.01"
+              name="amount"
               value={formData.amount}
-              onChange={(e) => setFormData({...formData, amount: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
-                errors.amount ? 'border-red-500' : 'border-gray-300'
-              }`}
+              onChange={handleInputChange}
               placeholder="0.00"
+              step="0.01"
+              min="0.01"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              required
             />
-            {errors.amount && (
-              <p className="text-red-500 text-sm mt-1">{errors.amount}</p>
-            )}
-          </div>
-
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Tag size={16} className="inline mr-1" />
-              Category
-            </label>
-            <select
-              value={formData.category}
-              onChange={(e) => setFormData({...formData, category: e.target.value})}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-            >
-              {categories.map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Group Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Users size={16} className="inline mr-1" />
-              Group
-            </label>
-            <select
-              value={formData.groupId}
-              onChange={(e) => setFormData({...formData, groupId: e.target.value})}
-              className={`w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 ${
-                errors.groupId ? 'border-red-500' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Select a group</option>
-              {state.groups.map(group => (
-                <option key={group.id} value={group.id}>
-                  {group.name} ({group.members?.length || 0} members)
-                </option>
-              ))}
-            </select>
-            {errors.groupId && (
-              <p className="text-red-500 text-sm mt-1">{errors.groupId}</p>
-            )}
           </div>
 
           {/* Paid By */}
-          {selectedGroup && selectedGroup.members && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Paid By *
+            </label>
+            <select
+              name="paidById"
+              value={formData.paidById}
+              onChange={handleInputChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              required
+            >
+              <option value="">Select who paid</option>
+              {selectedGroup.members?.map(member => (
+                <option key={member.id} value={member.id}>
+                  {member.name} ({member.email})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Split Between */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Split Between * (Select members)
+            </label>
+            <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2">
+              {selectedGroup.members?.map(member => (
+                <label key={member.id} className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedMembers.includes(member.id)}
+                    onChange={() => handleMemberToggle(member.id)}
+                    className="rounded"
+                  />
+                  <span className="text-sm">
+                    {member.name} ({member.email})
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Selected: {selectedMembers.length} member(s)
+            </p>
+          </div>
+
+          {/* Buttons */}
+          <div className="flex space-x-3 pt-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex-1 bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'Adding...' : 'Add Expense'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={loading}
+              className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
+  // Standalone page mode
+  return (
+    <div className="min-h-screen bg-gray-50 pt-16">
+      <div className="max-w-md mx-auto pt-8">
+        <div className="bg-white p-6 rounded-lg shadow-lg">
+          <h2 className="text-2xl font-bold mb-6 text-center">Add New Expense</h2>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+              {success}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Group Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Paid by
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Select Group *
               </label>
               <select
-                value={formData.paidById}
-                onChange={(e) => setFormData({...formData, paidById: e.target.value})}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                name="groupId"
+                value={formData.groupId}
+                onChange={handleGroupChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                required
               >
-                {selectedGroup.members.map(member => (
-                  <option key={member.id} value={member.id}>
-                    {member.name} {member.id === state.currentUser?.id ? '(You)' : ''}
+                <option value="">Choose a group</option>
+                {groups.map(group => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
                   </option>
                 ))}
               </select>
             </div>
-          )}
 
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Notes (Optional)
-            </label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({...formData, notes: e.target.value})}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Additional details or context"
-              rows={3}
-            />
-          </div>
-
-          {/* Split Preview */}
-          {selectedGroup && formData.amount && (
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-medium text-gray-900 mb-2">Split Preview</h3>
-              <p className="text-sm text-gray-600 mb-2">
-                Total: ₹{parseFloat(formData.amount || 0).toFixed(2)}
-              </p>
-              <p className="text-sm text-gray-600">
-                Split equally among {selectedGroup.members?.length || 0} members:
-                <span className="font-medium ml-1">
-                  ₹{(parseFloat(formData.amount || 0) / (selectedGroup.members?.length || 1)).toFixed(2)} per person
-                </span>
-              </p>
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description *
+              </label>
+              <input
+                type="text"
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                placeholder="e.g., Lunch at restaurant"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                required
+              />
             </div>
-          )}
 
-          {/* Error Message */}
-          {errors.submit && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              {errors.submit}
+            {/* Amount */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Amount *
+              </label>
+              <input
+                type="number"
+                name="amount"
+                value={formData.amount}
+                onChange={handleInputChange}
+                placeholder="0.00"
+                step="0.01"
+                min="0.01"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                required
+              />
             </div>
-          )}
 
-          {/* Submit Buttons */}
-          <div className="flex space-x-4">
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="flex-1 bg-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-400 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={state.loading}
-              className="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {state.loading ? 'Adding...' : 'Add Expense'}
-            </button>
-          </div>
-        </form>
+            {/* Show remaining fields only if group is selected */}
+            {activeGroup && (
+              <>
+                {/* Paid By */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Paid By *
+                  </label>
+                  <select
+                    name="paidById"
+                    value={formData.paidById}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    required
+                  >
+                    <option value="">Select who paid</option>
+                    {activeGroup.members?.map(member => (
+                      <option key={member.id} value={member.id}>
+                        {member.name} ({member.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-        {/* Quick Tips */}
-        <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-          <h4 className="font-medium text-blue-900 mb-2">💡 Quick Tips</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Expenses are automatically split equally among all group members</li>
-            <li>• You can change who paid for the expense if it wasn't you</li>
-            <li>• Categories help you track spending patterns</li>
-            <li>• Add notes for receipts or additional context</li>
-          </ul>
+                {/* Split Between */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Split Between * (Select members)
+                  </label>
+                  <div className="space-y-2 max-h-32 overflow-y-auto border rounded-md p-2">
+                    {activeGroup.members?.map(member => (
+                      <label key={member.id} className="flex items-center space-x-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedMembers.includes(member.id)}
+                          onChange={() => handleMemberToggle(member.id)}
+                          className="rounded"
+                        />
+                        <span className="text-sm">
+                          {member.name} ({member.email})
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Selected: {selectedMembers.length} member(s)
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Buttons */}
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="submit"
+                disabled={loading || !activeGroup}
+                className="flex-1 bg-green-500 text-white py-2 px-4 rounded-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Adding...' : 'Add Expense'}
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                disabled={loading}
+                className="flex-1 bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>
