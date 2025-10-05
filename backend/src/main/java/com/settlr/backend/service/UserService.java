@@ -3,6 +3,8 @@ package com.settlr.backend.service;
 import com.settlr.backend.dto.UserDTO;
 import com.settlr.backend.entity.User;
 import com.settlr.backend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -13,33 +15,93 @@ import java.util.stream.Collectors;
 @Service
 public class UserService {
 
+    private static final Logger logger = LoggerFactory.getLogger(UserService.class);
+
     @Autowired
     private UserRepository userRepository;
 
     public List<UserDTO> getAllUsers() {
-        return userRepository.findAll().stream()
-                .map(this::convertToDTO)
-                .collect(Collectors.toList());
+        logger.debug("UserService.getAllUsers() - Fetching all users from database");
+        try {
+            List<User> users = userRepository.findAll();
+            logger.info("UserService.getAllUsers() - Found {} users in database", users.size());
+            return users.stream()
+                    .map(this::convertToDTO)
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("UserService.getAllUsers() - Database error: {}", e.getMessage(), e);
+            throw e;
+        }
     }
 
     public Optional<UserDTO> getUserById(Long id) {
-        return userRepository.findById(id)
-                .map(this::convertToDTO);
+        logger.debug("UserService.getUserById() - Searching for user with ID: {}", id);
+        try {
+            Optional<User> user = userRepository.findById(id);
+            if (user.isPresent()) {
+                logger.info("UserService.getUserById() - Found user with ID: {}, email: {}",
+                           id, user.get().getEmail());
+            } else {
+                logger.warn("UserService.getUserById() - No user found with ID: {}", id);
+            }
+            return user.map(this::convertToDTO);
+        } catch (Exception e) {
+            logger.error("UserService.getUserById() - Database error for ID {}: {}", id, e.getMessage(), e);
+            throw e;
+        }
     }
 
     public Optional<UserDTO> getUserByEmail(String email) {
-        return userRepository.findByEmail(email)
-                .map(this::convertToDTO);
+        logger.debug("UserService.getUserByEmail() - Searching for user with email: {}", email);
+        try {
+            Optional<User> user = userRepository.findByEmail(email);
+            if (user.isPresent()) {
+                logger.info("UserService.getUserByEmail() - Found user with email: {}, ID: {}",
+                           email, user.get().getId());
+            } else {
+                logger.warn("UserService.getUserByEmail() - No user found with email: {}", email);
+            }
+            return user.map(this::convertToDTO);
+        } catch (Exception e) {
+            logger.error("UserService.getUserByEmail() - Database error for email {}: {}", email, e.getMessage(), e);
+            throw e;
+        }
     }
 
     public UserDTO createUser(UserDTO userDTO) {
-        if (userRepository.existsByEmail(userDTO.getEmail())) {
-            throw new RuntimeException("User with email " + userDTO.getEmail() + " already exists");
-        }
+        logger.info("UserService.createUser() - Creating user with email: {}, name: {}",
+                   userDTO.getEmail(), userDTO.getName());
 
-        User user = convertToEntity(userDTO);
-        User savedUser = userRepository.save(user);
-        return convertToDTO(savedUser);
+        try {
+            // Check if user already exists
+            logger.debug("UserService.createUser() - Checking if user already exists with email: {}", userDTO.getEmail());
+            boolean exists = userRepository.existsByEmail(userDTO.getEmail());
+
+            if (exists) {
+                logger.warn("UserService.createUser() - User already exists with email: {}", userDTO.getEmail());
+                throw new RuntimeException("User with email " + userDTO.getEmail() + " already exists");
+            }
+
+            logger.debug("UserService.createUser() - Email is unique, proceeding with user creation");
+            User user = convertToEntity(userDTO);
+            logger.debug("UserService.createUser() - Converted DTO to entity, saving to database");
+
+            User savedUser = userRepository.save(user);
+            logger.info("UserService.createUser() - Successfully saved user to database with ID: {}", savedUser.getId());
+
+            UserDTO result = convertToDTO(savedUser);
+            logger.info("UserService.createUser() - User creation completed successfully for email: {}", userDTO.getEmail());
+            return result;
+
+        } catch (RuntimeException e) {
+            logger.error("UserService.createUser() - Business logic error for email {}: {}",
+                        userDTO.getEmail(), e.getMessage(), e);
+            throw e;
+        } catch (Exception e) {
+            logger.error("UserService.createUser() - Unexpected database error for email {}: {}",
+                        userDTO.getEmail(), e.getMessage(), e);
+            throw new RuntimeException("Failed to create user: " + e.getMessage(), e);
+        }
     }
 
     public UserDTO updateUser(Long id, UserDTO userDTO) {
@@ -74,10 +136,12 @@ public class UserService {
 
     // Helper methods for conversion
     private UserDTO convertToDTO(User user) {
+        logger.trace("UserService.convertToDTO() - Converting user entity to DTO for ID: {}", user.getId());
         return new UserDTO(user.getId(), user.getName(), user.getEmail(), user.getCreatedAt());
     }
 
     private User convertToEntity(UserDTO userDTO) {
+        logger.trace("UserService.convertToEntity() - Converting DTO to user entity for email: {}", userDTO.getEmail());
         User user = new User();
         user.setName(userDTO.getName());
         user.setEmail(userDTO.getEmail());
