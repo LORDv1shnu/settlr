@@ -8,7 +8,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
@@ -68,6 +71,23 @@ public class ExpenseController {
         try {
             expenseService.deleteExpense(id);
             return ResponseEntity.noContent().build();
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @GetMapping("/group/{groupId}/balances")
+    public ResponseEntity<Map<String, Object>> getGroupBalances(@PathVariable Long groupId) {
+        try {
+            // For now, return a simple balance structure
+            // TODO: Implement proper balance calculation logic
+            Map<String, Object> balances = new HashMap<>();
+            balances.put("groupId", groupId);
+            balances.put("totalExpenses", expenseService.getTotalExpensesByGroupId(groupId));
+            balances.put("balances", new ArrayList<>());
+            balances.put("settlements", new ArrayList<>());
+
+            return ResponseEntity.ok(balances);
         } catch (RuntimeException e) {
             return ResponseEntity.notFound().build();
         }

@@ -21,24 +21,35 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
                                   FilterChain filterChain) throws ServletException, IOException {
 
         long startTime = System.currentTimeMillis();
+        String method = request.getMethod();
+        String url = request.getRequestURL().toString();
 
-        // Log incoming request
-        logger.info("=== INCOMING REQUEST ===");
-        logger.info("Method: {} | URL: {} | Remote Address: {}",
-                   request.getMethod(), request.getRequestURL().toString(), request.getRemoteAddr());
-        logger.info("Headers: User-Agent={}, Content-Type={}, Origin={}",
-                   request.getHeader("User-Agent"), request.getHeader("Content-Type"), request.getHeader("Origin"));
+        // Only log important operations (POST, PUT, DELETE) or errors
+        boolean shouldLog = !method.equals("GET") || logger.isDebugEnabled();
+
+        if (shouldLog) {
+            logger.info("=== {} {} ===", method, url);
+            logger.debug("Headers: User-Agent={}, Content-Type={}, Origin={}",
+                       request.getHeader("User-Agent"), request.getHeader("Content-Type"), request.getHeader("Origin"));
+        }
 
         try {
             // Continue with the request
             filterChain.doFilter(request, response);
         } finally {
-            // Log response
+            // Log response for important operations or errors
             long duration = System.currentTimeMillis() - startTime;
-            logger.info("=== RESPONSE ===");
-            logger.info("Status: {} | Duration: {}ms | Content-Type: {}",
-                       response.getStatus(), duration, response.getContentType());
-            logger.info("========================");
+            int status = response.getStatus();
+
+            if (shouldLog || status >= 400) {
+                if (status >= 400) {
+                    logger.warn("=== RESPONSE ERROR ===");
+                    logger.warn("Status: {} | Duration: {}ms | URL: {}", status, duration, url);
+                } else if (shouldLog) {
+                    logger.info("=== RESPONSE ===");
+                    logger.info("Status: {} | Duration: {}ms", status, duration);
+                }
+            }
         }
     }
 }

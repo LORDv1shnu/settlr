@@ -6,6 +6,8 @@ import com.settlr.backend.entity.ExpenseGroup;
 import com.settlr.backend.entity.User;
 import com.settlr.backend.repository.ExpenseGroupRepository;
 import com.settlr.backend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +17,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class ExpenseGroupService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ExpenseGroupService.class);
 
     @Autowired
     private ExpenseGroupRepository expenseGroupRepository;
@@ -40,16 +44,48 @@ public class ExpenseGroupService {
     }
 
     public ExpenseGroupDTO createGroup(ExpenseGroupDTO groupDTO) {
-        ExpenseGroup group = convertToEntity(groupDTO);
+        logger.info("ExpenseGroupService.createGroup() - Creating group with name: {}, description: {}",
+                   groupDTO.getName(), groupDTO.getDescription());
+        logger.debug("ExpenseGroupService.createGroup() - Member IDs: {}", groupDTO.getMemberIds());
 
-        // Add members to the group
-        if (groupDTO.getMemberIds() != null && !groupDTO.getMemberIds().isEmpty()) {
-            List<User> members = userRepository.findAllById(groupDTO.getMemberIds());
-            group.setMembers(members);
+        try {
+            ExpenseGroup group = convertToEntity(groupDTO);
+            logger.debug("ExpenseGroupService.createGroup() - Converted DTO to entity");
+
+            // Add members to the group
+            if (groupDTO.getMemberIds() != null && !groupDTO.getMemberIds().isEmpty()) {
+                logger.debug("ExpenseGroupService.createGroup() - Finding {} members by IDs", groupDTO.getMemberIds().size());
+                List<User> members = userRepository.findAllById(groupDTO.getMemberIds());
+                logger.info("ExpenseGroupService.createGroup() - Found {} members in database", members.size());
+
+                if (members.size() != groupDTO.getMemberIds().size()) {
+                    logger.warn("ExpenseGroupService.createGroup() - Warning: Requested {} members but found {} in database",
+                               groupDTO.getMemberIds().size(), members.size());
+                }
+
+                group.setMembers(members);
+                logger.debug("ExpenseGroupService.createGroup() - Added members to group");
+            } else {
+                logger.warn("ExpenseGroupService.createGroup() - No member IDs provided for group");
+            }
+
+            logger.debug("ExpenseGroupService.createGroup() - Saving group to database");
+            ExpenseGroup savedGroup = expenseGroupRepository.save(group);
+            logger.info("ExpenseGroupService.createGroup() - Successfully saved group to database with ID: {}", savedGroup.getId());
+
+            ExpenseGroupDTO result = convertToDTO(savedGroup);
+            logger.info("ExpenseGroupService.createGroup() - Group creation completed successfully for: {}", groupDTO.getName());
+            return result;
+
+        } catch (RuntimeException e) {
+            logger.error("ExpenseGroupService.createGroup() - Business logic error for group {}: {}",
+                        groupDTO.getName(), e.getMessage(), e);
+            throw e;
+        } catch (Exception e) {
+            logger.error("ExpenseGroupService.createGroup() - Unexpected database error for group {}: {}",
+                        groupDTO.getName(), e.getMessage(), e);
+            throw new RuntimeException("Failed to create group: " + e.getMessage(), e);
         }
-
-        ExpenseGroup savedGroup = expenseGroupRepository.save(group);
-        return convertToDTO(savedGroup);
     }
 
     public ExpenseGroupDTO updateGroup(Long id, ExpenseGroupDTO groupDTO) {
