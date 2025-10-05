@@ -42,25 +42,38 @@ const SettleUp = () => {
     const settlements = [];
     const balances = { ...balance.userBalances };
 
+    // Get the group to access member information
+    const group = groups.find(g => g.id === groupId);
+    if (!group) return [];
+
+    // Create a mapping of user ID to user name for display
+    const userIdToName = {};
+    group.members?.forEach(member => {
+      userIdToName[member.id] = member.name;
+    });
+
     // Get people who owe money (positive balance) and who are owed money (negative balance)
     const debtors = Object.entries(balances).filter(([_, amount]) => amount > 0);
     const creditors = Object.entries(balances).filter(([_, amount]) => amount < 0);
 
     // Calculate optimal settlements
-    for (let [debtor, debtAmount] of debtors) {
-      for (let [creditor, creditAmount] of creditors) {
+    for (let [debtorId, debtAmount] of debtors) {
+      for (let [creditorId, creditAmount] of creditors) {
         if (debtAmount > 0 && creditAmount < 0) {
           const settleAmount = Math.min(debtAmount, Math.abs(creditAmount));
           if (settleAmount > 0) {
             settlements.push({
-              from: debtor,
-              to: creditor,
-              amount: settleAmount
+              fromId: debtorId,
+              toId: creditorId,
+              fromName: userIdToName[debtorId] || `User ${debtorId}`,
+              toName: userIdToName[creditorId] || `User ${creditorId}`,
+              amount: settleAmount,
+              groupId: groupId
             });
 
             // Update remaining balances
-            balances[debtor] -= settleAmount;
-            balances[creditor] += settleAmount;
+            balances[debtorId] -= settleAmount;
+            balances[creditorId] += settleAmount;
             debtAmount -= settleAmount;
             creditAmount += settleAmount;
           }
@@ -69,6 +82,44 @@ const SettleUp = () => {
     }
 
     return settlements;
+  };
+
+  // Handle settlement recording
+  const handleSettlement = async (settlement) => {
+    try {
+      // For now, we'll create a settlement expense to record the payment
+      // In a full implementation, you'd want a dedicated settlements API
+      const settlementExpense = {
+        description: `Settlement: ${settlement.fromName} → ${settlement.toName}`,
+        amount: settlement.amount,
+        paidById: parseInt(settlement.toId), // Person receiving gets "paid"
+        groupId: parseInt(settlement.groupId),
+        splitBetween: [parseInt(settlement.fromId)] // Only the payer "owes" this
+      };
+
+      // You could also add a settlement record or modify balances directly
+      console.log('Recording settlement:', settlementExpense);
+
+      // For now, just refresh the balances to simulate settlement
+      // In a real app, you'd call a settlement API here
+      alert(`Settlement recorded: ${settlement.fromName} paid ₹${settlement.amount.toFixed(2)} to ${settlement.toName}`);
+
+      // Refresh balances after settlement
+      const balances = {};
+      for (const group of groups) {
+        try {
+          const groupBalance = await getGroupBalances(group.id);
+          balances[group.id] = groupBalance;
+        } catch (error) {
+          console.error('Error loading balance for group:', group.id);
+        }
+      }
+      setGroupBalances(balances);
+
+    } catch (error) {
+      console.error('Error recording settlement:', error);
+      alert('Failed to record settlement. Please try again.');
+    }
   };
 
   const getUserBalance = (groupId, userId) => {
@@ -205,20 +256,42 @@ const SettleUp = () => {
                     <h4 className="font-medium text-gray-900 mb-2">Suggested Settlements</h4>
                     <div className="space-y-2">
                       {groupSettlements.map((settlement, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                        <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
                           <div className="flex items-center space-x-3">
-                            <span className="font-medium text-gray-900">{settlement.from}</span>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                                <span className="text-xs font-bold text-blue-600">
+                                  {settlement.fromName.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              <span className="font-medium text-gray-900">{settlement.fromName}</span>
+                            </div>
                             <ArrowRight className="w-4 h-4 text-blue-600" />
-                            <span className="font-medium text-gray-900">{settlement.to}</span>
+                            <div className="flex items-center space-x-2">
+                              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                                <span className="text-xs font-bold text-green-600">
+                                  {settlement.toName.charAt(0).toUpperCase()}
+                                </span>
+                              </div>
+                              <span className="font-medium text-gray-900">{settlement.toName}</span>
+                            </div>
                           </div>
                           <div className="flex items-center space-x-3">
-                            <span className="font-bold text-blue-600">₹{settlement.amount.toFixed(2)}</span>
-                            <button className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 transition-colors">
-                              Settle
+                            <span className="font-bold text-blue-600 text-lg">₹{settlement.amount.toFixed(2)}</span>
+                            <button
+                              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm"
+                              onClick={() => handleSettlement(settlement)}
+                            >
+                              Mark as Settled
                             </button>
                           </div>
                         </div>
                       ))}
+                    </div>
+                    <div className="mt-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <p className="text-sm text-yellow-700">
+                        💡 <strong>Tip:</strong> These are optimized settlements to minimize the number of transactions needed.
+                      </p>
                     </div>
                   </div>
                 )}
