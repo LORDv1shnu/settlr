@@ -9,6 +9,7 @@ const Dashboard = ({ currentUser, setCurrentView }) => {
   const [totalToReceive, setTotalToReceive] = useState(0);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [settlements, setSettlements] = useState([]);
 
   const API_BASE = 'http://localhost:8080/api';
 
@@ -30,9 +31,25 @@ const Dashboard = ({ currentUser, setCurrentView }) => {
       setGroups(groupsData);
       setExpenses(expensesData);
 
+      // Fetch all settlements for user's groups
+      const allSettlements = [];
+      for (const group of groupsData) {
+        try {
+          const settlementsRes = await fetch(`${API_BASE}/settlements/group/${group.id}`);
+          if (settlementsRes.ok) {
+            const groupSettlements = await settlementsRes.json();
+            allSettlements.push(...groupSettlements);
+          }
+        } catch (error) {
+          console.error(`Error fetching settlements for group ${group.id}:`, error);
+        }
+      }
+      setSettlements(allSettlements);
+
       console.log('✅ Dashboard data loaded:', {
         groups: groupsData.length,
-        expenses: expensesData.length
+        expenses: expensesData.length,
+        settlements: allSettlements.length
       });
 
       setLastRefresh(new Date());
@@ -59,24 +76,86 @@ const Dashboard = ({ currentUser, setCurrentView }) => {
       .slice(0, 5);
     setRecentExpenses(sorted);
 
-    // Calculate total owed and to receive
+    // Calculate total owed and to receive across all groups
+    // Now properly accounting for settlements from database
     let owed = 0;
     let toReceive = 0;
 
-    expenses.forEach(expense => {
-      if (expense.paidBy?.id === currentUser.id) {
-        // User paid, others owe them
-        const amountPerPerson = expense.amountPerPerson || 0;
-        toReceive += (expense.amount - amountPerPerson);
-      } else if (expense.splitBetweenUsers?.some(user => user.id === currentUser.id)) {
+    groups.forEach(group => {
+      const groupExpenses = expenses.filter(exp => exp.group?.id === group.id);
+      const groupSettlements = settlements.filter(s => s.groupId === group.id);
+      const balances = {};
+      
+      // Calculate gross balances from expenses
+      groupExpenses.forEach(expense => {
+        const totalAmount = expense.amount;
+        const splitCount = expense.splitBetweenUsers?.length || 1;
+        const amountPerPerson = totalAmount / splitCount;
+
+        const paidByName = expense.paidBy?.name;
+        if (paidByName) {
+          if (!balances[paidByName]) balances[paidByName] = 0;
+          balances[paidByName] += totalAmount - amountPerPerson;
+        }
+
+        if (expense.splitBetweenUsers) {
+          expense.splitBetweenUsers.forEach(user => {
+            if (!balances[user.name]) balances[user.name] = 0;
+            if (user.name !== paidByName) {
+              balances[user.name] -= amountPerPerson;
+            }
+          });
+        }
+      });
+
+      // Apply settlements to reduce balances
+      groupSettlements.forEach(settlement => {
+        const fromUserName = settlement.fromUserName;
+        const toUserName = settlement.toUserName;
+        const amount = settlement.amount;
+
+        // When fromUser pays toUser:
+        // - fromUser's debt decreases (add to balance)
+        // - toUser's credit decreases (subtract from balance)
+        if (balances[fromUserName] !== undefined) {
+          balances[fromUserName] += amount;
+        }
+        if (balances[toUserName] !== undefined) {
+          balances[toUserName] -= amount;
+        }
+      });
+
+      // Get user's balance in this group (now net of settlements)
+      const userBalance = balances[currentUser.name] || 0;
+      
+      if (userBalance > 0.01) {
+        // User is owed money
+        // Calculate settlements with each debtor
+        Object.entries(balances).forEach(([otherUser, otherBalance]) => {
+          if (otherUser !== currentUser.name && otherBalance < -0.01) {
+            const amount = Math.min(userBalance, Math.abs(otherBalance));
+            if (amount > 0.01) {
+              toReceive += amount;
+            }
+          }
+        });
+      } else if (userBalance < -0.01) {
         // User owes money
-        owed += expense.amountPerPerson || 0;
+        // Calculate settlements with each creditor
+        Object.entries(balances).forEach(([otherUser, otherBalance]) => {
+          if (otherUser !== currentUser.name && otherBalance > 0.01) {
+            const amount = Math.min(Math.abs(userBalance), otherBalance);
+            if (amount > 0.01) {
+              owed += amount;
+            }
+          }
+        });
       }
     });
 
     setTotalOwed(owed);
     setTotalToReceive(toReceive);
-  }, [currentUser, expenses, groups]);
+  }, [currentUser, expenses, groups, settlements]);
 
   // Load data on component mount
   useEffect(() => {

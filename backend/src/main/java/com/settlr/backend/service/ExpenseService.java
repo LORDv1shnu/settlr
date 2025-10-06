@@ -5,6 +5,7 @@ import com.settlr.backend.dto.ExpenseGroupDTO;
 import com.settlr.backend.dto.UserDTO;
 import com.settlr.backend.entity.Expense;
 import com.settlr.backend.entity.ExpenseGroup;
+import com.settlr.backend.entity.Settlement;
 import com.settlr.backend.entity.User;
 import com.settlr.backend.repository.ExpenseRepository;
 import com.settlr.backend.repository.ExpenseGroupRepository;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +35,9 @@ public class ExpenseService {
 
     @Autowired
     private ExpenseGroupRepository expenseGroupRepository;
+
+    @Autowired
+    private SettlementService settlementService ;
 
     public List<ExpenseDTO> getAllExpenses() {
         return expenseRepository.findAll().stream()
@@ -147,9 +152,11 @@ public class ExpenseService {
     }
 
     /**
-     * Calculate balances for each user in a group
-     * Positive balance = user owes money
-     * Negative balance = user is owed money
+     * Calculate balances for each user in a group (including settlements)
+     * Convention:
+     * - Positive balance (+) = user is OWED money (creditor)
+     * - Negative balance (-) = user OWES money (debtor)
+     * - Zero (0) = settled up
      */
     public Map<Long, Double> calculateUserBalances(Long groupId) {
         logger.info("ExpenseService.calculateUserBalances() - Calculating balances for group {}", groupId);
@@ -159,6 +166,7 @@ public class ExpenseService {
 
         logger.info("Found {} expenses for group {}", expenses.size(), groupId);
 
+        // Step 1: Calculate gross balances from expenses
         for (Expense expense : expenses) {
             Long paidById = expense.getPaidBy().getId();
             List<Long> splitBetween = expense.getSplitBetween();
@@ -174,20 +182,51 @@ public class ExpenseService {
                 balances.putIfAbsent(userId, 0.0);
             }
 
-            // Each person in splitBetween owes their share
-            for (Long userId : splitBetween) {
-                balances.put(userId, balances.get(userId) + amountPerPerson);
-            }
+            // Convention: Positive = owed TO you, Negative = you owe
+            
+            // Person who paid gets credited (they are owed money)
+            // They paid totalAmount but only owe amountPerPerson for themselves
+            // Net: they should be owed (totalAmount - amountPerPerson)
+            balances.put(paidById, balances.get(paidById) + (totalAmount - amountPerPerson));
 
-            // The person who paid gets credited for the full amount
-            // This effectively means they paid totalAmount but only owe amountPerPerson
-            // So their net change is: +amountPerPerson (from above) - totalAmount = amountPerPerson - totalAmount
-            balances.put(paidById, balances.get(paidById) - totalAmount);
+            // Each other person owes their share (negative balance)
+            for (Long userId : splitBetween) {
+                if (!userId.equals(paidById)) {
+                    balances.put(userId, balances.get(userId) - amountPerPerson);
+                }
+            }
 
             logger.debug("Updated balances after expense {}: {}", expense.getDescription(), balances);
         }
 
-        logger.info("Final balances for group {}: {}", groupId, balances);
+        logger.info("Gross balances for group {} (before settlements): {}", groupId, balances);
+
+        // Step 2: Subtract settlements
+        List<Settlement> settlements = settlementService.getSettlementsByGroup(groupId);
+        logger.info("Found {} settlements for group {}", settlements.size(), groupId);
+
+        for (Settlement settlement : settlements) {
+            Long fromUserId = settlement.getFromUser().getId();
+            Long toUserId = settlement.getToUser().getId();
+            double settlementAmount = settlement.getAmount().doubleValue();
+
+            logger.debug("Processing settlement: {} paid {} to {}", 
+                        fromUserId, settlementAmount, toUserId);
+
+            // Initialize if not already present
+            balances.putIfAbsent(fromUserId, 0.0);
+            balances.putIfAbsent(toUserId, 0.0);
+
+            // fromUser paid toUser, so:
+            // - fromUser's debt decreases (add to balance: -400 + 400 = 0)
+            // - toUser's credit decreases (subtract from balance: +400 - 400 = 0)
+            balances.put(fromUserId, balances.get(fromUserId) + settlementAmount);
+            balances.put(toUserId, balances.get(toUserId) - settlementAmount);
+
+            logger.debug("Updated balances after settlement: {}", balances);
+        }
+
+        logger.info("Final balances for group {} (after settlements): {}", groupId, balances);
         return balances;
     }
 

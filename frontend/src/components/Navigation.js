@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Home,
   Users,
   Plus,
   DollarSign,
-  Settings,
+  Mail,
   LogOut,
   Menu,
   X,
@@ -14,13 +14,35 @@ import {
 
 const Navigation = ({ currentView, setCurrentView, currentUser, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchNotificationCount();
+      // Refresh every 30 seconds
+      const interval = setInterval(fetchNotificationCount, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser]);
+
+  const fetchNotificationCount = async () => {
+    try {
+      const response = await fetch(`http://localhost:8080/api/invitations/user/${currentUser.id}/pending`);
+      if (response.ok) {
+        const data = await response.json();
+        setNotificationCount(data.length);
+      }
+    } catch (error) {
+      console.error('Error fetching notification count:', error);
+    }
+  };
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: Home, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { id: 'groups', label: 'Groups', icon: Users, color: 'text-green-600', bgColor: 'bg-green-50' },
     { id: 'add-expense', label: 'Add Expense', icon: Plus, color: 'text-purple-600', bgColor: 'bg-purple-50' },
     { id: 'settle-up', label: 'Settle Up', icon: DollarSign, color: 'text-orange-600', bgColor: 'bg-orange-50' },
-    { id: 'admin', label: 'Admin', icon: Settings, color: 'text-gray-600', bgColor: 'bg-gray-50' },
+    { id: 'notifications', label: 'Notifications', icon: Mail, color: 'text-pink-600', bgColor: 'bg-pink-50' },
   ];
 
   const toggleMobileMenu = () => {
@@ -54,11 +76,12 @@ const Navigation = ({ currentView, setCurrentView, currentUser, onLogout }) => {
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
+                const showBadge = item.id === 'notifications' && notificationCount > 0;
                 return (
                   <button
                     key={item.id}
                     onClick={() => handleNavClick(item.id)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center space-x-2 ${
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center space-x-2 relative ${
                       isActive
                         ? `${item.bgColor} ${item.color} shadow-sm`
                         : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -66,6 +89,11 @@ const Navigation = ({ currentView, setCurrentView, currentUser, onLogout }) => {
                   >
                     <Icon className={`w-4 h-4 ${isActive ? 'animate-pulse' : ''}`} />
                     <span>{item.label}</span>
+                    {showBadge && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                        {notificationCount > 9 ? '9+' : notificationCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -137,11 +165,12 @@ const Navigation = ({ currentView, setCurrentView, currentUser, onLogout }) => {
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = currentView === item.id;
+              const showBadge = item.id === 'notifications' && notificationCount > 0;
               return (
                 <button
                   key={item.id}
                   onClick={() => handleNavClick(item.id)}
-                  className={`w-full flex items-center px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  className={`w-full flex items-center px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative ${
                     isActive
                       ? `${item.bgColor} ${item.color} shadow-sm`
                       : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
@@ -149,6 +178,11 @@ const Navigation = ({ currentView, setCurrentView, currentUser, onLogout }) => {
                 >
                   <Icon className={`w-5 h-5 mr-3 ${isActive ? 'animate-pulse' : ''}`} />
                   {item.label}
+                  {showBadge && (
+                    <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                      {notificationCount > 9 ? '9+' : notificationCount}
+                    </span>
+                  )}
                 </button>
               );
             })}

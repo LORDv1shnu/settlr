@@ -68,6 +68,17 @@ public class UserService {
         }
     }
 
+    // Expose entity lookup for internal checks (e.g., authentication). Not part of public API.
+    public Optional<User> findEntityByEmail(String email) {
+        logger.debug("UserService.findEntityByEmail() - Fetching user entity by email: {}", email);
+        try {
+            return userRepository.findByEmail(email);
+        } catch (Exception e) {
+            logger.error("UserService.findEntityByEmail() - Database error for email {}: {}", email, e.getMessage(), e);
+            throw e;
+        }
+    }
+
     public UserDTO createUser(UserDTO userDTO) {
         logger.info("UserService.createUser() - Creating user with email: {}, name: {}",
                    userDTO.getEmail(), userDTO.getName());
@@ -84,6 +95,8 @@ public class UserService {
 
             logger.debug("UserService.createUser() - Email is unique, proceeding with user creation");
             User user = convertToEntity(userDTO);
+            // Map password (plaintext for demo). In production you must hash this.
+            user.setPassword(userDTO.getPassword());
             logger.debug("UserService.createUser() - Converted DTO to entity, saving to database");
 
             User savedUser = userRepository.save(user);

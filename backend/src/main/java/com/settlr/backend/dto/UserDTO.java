@@ -15,6 +15,10 @@ public class UserDTO {
     @NotBlank(message = "Email is required")
     private String email;
 
+    // Plaintext password for demo only. Will not be returned in responses.
+    @NotBlank(message = "Password is required")
+    private String password;
+
     private LocalDateTime createdAt;
 
     // Constructors
@@ -23,6 +27,12 @@ public class UserDTO {
     public UserDTO(String name, String email) {
         this.name = name;
         this.email = email;
+    }
+
+    public UserDTO(String name, String email, String password) {
+        this.name = name;
+        this.email = email;
+        this.password = password;
     }
 
     public UserDTO(Long id, String name, String email, LocalDateTime createdAt) {
@@ -63,5 +73,13 @@ public class UserDTO {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 }

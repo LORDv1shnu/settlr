@@ -24,6 +24,11 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
+    // NOTE: plaintext password for demo purposes only. Do NOT use in production.
+    @NotBlank(message = "Password is required")
+    @Column(nullable = false)
+    private String password;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -44,6 +49,12 @@ public class User {
     public User(String name, String email) {
         this.name = name;
         this.email = email;
+    }
+
+    public User(String name, String email, String password) {
+        this.name = name;
+        this.email = email;
+        this.password = password;
     }
 
     // Getters and Setters
@@ -69,6 +80,14 @@ public class User {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
     }
 
     public LocalDateTime getCreatedAt() {

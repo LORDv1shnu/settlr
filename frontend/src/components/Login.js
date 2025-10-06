@@ -1,34 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Loader2 } from 'lucide-react';
 
-const Login = ({ onLogin }) => {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+const Login = ({ onLogin, onSwitchToSignup }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
     try {
-      const response = await fetch('http://localhost:8080/api/users');
-      if (response.ok) {
-        const usersData = await response.json();
-        setUsers(usersData);
+      const res = await fetch('http://localhost:8080/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (res.ok) {
+        const user = await res.json();
+        onLogin(user);
+      } else if (res.status === 401) {
+        setError('Invalid email or password');
       } else {
-        setError('Failed to load users - Backend might be down');
+        setError('Login failed - backend error');
       }
-    } catch (error) {
-      console.error('Login fetch error:', error);
-      setError('Cannot connect to backend. Make sure backend is running on port 8080.');
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('Cannot connect to backend. Is it running on port 8080?');
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleUserSelect = (user) => {
-    onLogin(user);
   };
 
   if (loading) {
@@ -68,43 +71,51 @@ const Login = ({ onLogin }) => {
             </div>
           )}
 
-          {users.length === 0 ? (
-            <div className="text-center py-8">
-              <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 mb-4">No users found</p>
-              <p className="text-sm text-gray-400">Please check your backend connection</p>
-            </div>
-          ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
-                Choose Your Account
-              </h3>
-              <div className="space-y-3">
-                {users.map((user) => (
-                  <button
-                    key={user.id}
-                    onClick={() => handleUserSelect(user)}
-                    className="w-full flex items-center p-4 bg-gray-50 hover:bg-blue-50 border border-gray-200 hover:border-blue-300 rounded-lg transition-all duration-200 transform hover:scale-105 hover:shadow-md"
-                  >
-                    <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mr-4">
-                      <span className="text-white font-semibold text-sm">
-                        {user.name.charAt(0).toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="flex-1 text-left">
-                      <p className="font-medium text-gray-900">{user.name}</p>
-                      <p className="text-sm text-gray-500">{user.email}</p>
-                    </div>
-                    <div className="text-blue-500">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </button>
-                ))}
-              </div>
+              <label className="block text-sm font-medium text-gray-700">Email</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+              />
             </div>
-          )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Password</label>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+              />
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center p-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-semibold hover:opacity-95 disabled:opacity-60"
+              >
+                {loading ? 'Signing in...' : 'Sign in'}
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-sm text-gray-600">
+              Don't have an account?{' '}
+              <button
+                onClick={onSwitchToSignup}
+                className="text-blue-600 hover:text-blue-700 font-semibold"
+              >
+                Sign up
+              </button>
+            </p>
+          </div>
         </div>
 
         {/* Features */}

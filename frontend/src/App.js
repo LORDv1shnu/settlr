@@ -4,8 +4,9 @@ import Navigation from './components/Navigation';
 import Groups from './components/Groups';
 import AddExpense from './components/AddExpense';
 import SettleUp from './components/SettleUp';
-import Admin from './components/Admin';
+import Notifications from './components/Notifications';
 import Login from './components/Login';
+import Signup from './components/Signup';
 import './index.css';
 
 function App() {
@@ -33,8 +34,17 @@ function App() {
     setCurrentView('login');
   };
 
+  const handleSignupSuccess = (user) => {
+    // After successful signup, redirect to login
+    setCurrentView('login');
+  };
+
   if (currentView === 'login') {
-    return <Login onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} onSwitchToSignup={() => setCurrentView('signup')} />;
+  }
+
+  if (currentView === 'signup') {
+    return <Signup onSignupSuccess={handleSignupSuccess} onBackToLogin={() => setCurrentView('login')} />;
   }
 
   return (
@@ -51,7 +61,7 @@ function App() {
         {currentView === 'groups' && <Groups currentUser={currentUser} />}
         {currentView === 'add-expense' && <AddExpense currentUser={currentUser} />}
         {currentView === 'settle-up' && <SettleUp currentUser={currentUser} />}
-        {currentView === 'admin' && <Admin currentUser={currentUser} />}
+        {currentView === 'notifications' && <Notifications currentUser={currentUser} />}
       </main>
     </div>
   );

@@ -32,8 +32,11 @@ public class ExpenseGroup {
     )
     private List<User> members = new ArrayList<>();
 
-    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Expense> expenses = new ArrayList<>();
+
+    @OneToMany(mappedBy = "group", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<GroupInvitation> invitations = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
@@ -95,6 +98,14 @@ public class ExpenseGroup {
 
     public void setExpenses(List<Expense> expenses) {
         this.expenses = expenses;
+    }
+
+    public List<GroupInvitation> getInvitations() {
+        return invitations;
+    }
+
+    public void setInvitations(List<GroupInvitation> invitations) {
+        this.invitations = invitations;
     }
 
     // Helper methods
