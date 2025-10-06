@@ -264,135 +264,16 @@ The frontend will start on `http://localhost:3000`
 - **Settlement Formula**: `fromUser += amount` (debt decreases), `toUser -= amount` (credit decreases)
 - **Expense Formula**: `payer += (totalAmount - perPersonShare)`, `others -= perPersonShare`
 
----
-
-## 🔐 Security Considerations
-
-### Current Implementation
-- Basic user registration and authentication
-- CORS enabled for frontend-backend communication
-- Input validation on backend using Jakarta Validation
-- SQL injection prevention via JPA/Hibernate
-
-### Recommended for Production
-- [ ] Add JWT or OAuth2 authentication
-- [ ] Implement password encryption (BCrypt)
-- [ ] Add rate limiting for API endpoints
-- [ ] Enable HTTPS with SSL certificates
-- [ ] Implement role-based access control (RBAC)
-- [ ] Add audit logging for sensitive operations
-- [ ] Implement CSRF protection
-- [ ] Add session management
-
----
-
-## 🚀 Deployment
+## 🚀 Running the Software
 
 ### Development
 ```bash
 # Backend
-cd backend && ./mvnw spring-boot:run
+cd backend && ./mvn spring-boot:run
 
 # Frontend
 cd frontend && npm start
 ```
-
-### Production
-
-#### Backend (Spring Boot)
-```bash
-cd backend
-./mvnw clean package
-java -jar target/backend-0.0.1-SNAPSHOT.jar
-```
-
-#### Frontend (React)
-```bash
-cd frontend
-npm run build
-# Serve the build folder using nginx, Apache, or any static server
-```
-
-#### Docker (Coming Soon)
-```bash
-docker-compose up
-```
-
----
-
-## 📁 Project Structure
-
-```
-settlr/
-├── backend/                    # Spring Boot backend
-│   ├── src/
-│   │   ├── main/
-│   │   │   ├── java/com/settlr/backend/
-│   │   │   │   ├── config/           # CORS, logging configuration
-│   │   │   │   ├── controller/       # REST API endpoints
-│   │   │   │   ├── dto/              # Data Transfer Objects
-│   │   │   │   ├── entity/           # JPA entities
-│   │   │   │   ├── exception/        # Global exception handling
-│   │   │   │   ├── repository/       # Data access layer
-│   │   │   │   └── service/          # Business logic
-│   │   │   └── resources/
-│   │   │       └── application.properties
-│   │   └── test/                     # Unit and integration tests
-│   ├── pom.xml                       # Maven dependencies
-│   └── mvnw, mvnw.cmd               # Maven wrapper scripts
-│
-├── frontend/                   # React frontend
-│   ├── public/
-│   │   └── index.html
-│   ├── src/
-│   │   ├── components/              # React components
-│   │   │   ├── Dashboard.js         # User dashboard
-│   │   │   ├── Groups.js            # Group management
-│   │   │   ├── AddExpense.js        # Expense creation
-│   │   │   ├── SettleUp.js          # Settlement tracking
-│   │   │   ├── Login.js             # Authentication
-│   │   │   ├── Navigation.js        # App navigation
-│   │   │   └── Admin.js             # Admin panel
-│   │   ├── context/
-│   │   │   └── ExpenseContext.js    # Global state management
-│   │   ├── App.js                   # Main app component
-│   │   ├── index.js                 # Entry point
-│   │   └── index.css                # Tailwind CSS imports
-│   ├── package.json                 # npm dependencies
-│   └── tailwind.config.js           # Tailwind configuration
-│
-├── DATABASE_AUDIT_REPORT.md    # Database structure documentation
-├── DEPLOYMENT_GUIDE.md         # Deployment instructions
-├── EXPENSE_BALANCE_FIX.md      # Balance calculation fix details
-├── GROUPS_PAGE_BALANCE_FIX.md  # Groups page fix details
-├── SETTLEMENT_MIGRATION.md     # Settlement feature migration guide
-├── INVITATIONS_GUIDE.md        # Group invitation feature guide
-└── README.md                   # This file
-```
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Make your changes**
-4. **Test thoroughly**: Ensure all existing features still work
-5. **Commit your changes**: `git commit -m 'Add amazing feature'`
-6. **Push to the branch**: `git push origin feature/amazing-feature`
-7. **Open a Pull Request**
-
-### Contribution Guidelines
-- Follow existing code style and conventions
-- Write meaningful commit messages
-- Add comments for complex logic
-- Update documentation for new features
-- Test your changes thoroughly
-- Keep PRs focused on a single feature/fix
-
----
 
 ## 🐛 Bug Reports & Feature Requests
 
@@ -401,30 +282,6 @@ Found a bug or have a feature idea? Please open an issue on GitHub:
 - **Bug Report**: Include steps to reproduce, expected behavior, and actual behavior
 - **Feature Request**: Describe the feature, use case, and potential implementation
 
----
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Inspired by [Splitwise](https://www.splitwise.com/)
-- Built with ❤️ using React, Spring Boot, and PostgreSQL
-- Icons by [Lucide Icons](https://lucide.dev/)
-- UI components styled with [Tailwind CSS](https://tailwindcss.com/)
-
----
-
-## 📧 Contact
-
-**Project Maintainer**: LORDv1shnu
-- GitHub: [@LORDv1shnu](https://github.com/LORDv1shnu)
-- Repository: [settlr](https://github.com/LORDv1shnu/settlr)
-
----
 
 ## 🗺️ Roadmap
 
@@ -451,18 +308,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] WebSocket support for real-time updates
 - [ ] Progressive Web App (PWA) features
 
----
-
-## 📚 Additional Documentation
-
-- [Database Audit Report](DATABASE_AUDIT_REPORT.md) - Complete database schema and structure
-- [Deployment Guide](DEPLOYMENT_GUIDE.md) - Detailed production deployment instructions
-- [Expense Balance Fix](EXPENSE_BALANCE_FIX.md) - Technical details on balance calculation fixes
-- [Groups Page Balance Fix](GROUPS_PAGE_BALANCE_FIX.md) - Display logic correction details
-- [Settlement Migration](SETTLEMENT_MIGRATION.md) - Migration from localStorage to database
-- [Invitations Guide](INVITATIONS_GUIDE.md) - Group invitation system documentation
-
----
 
 ## ⚡ Quick Start (TL;DR)
 
@@ -486,6 +331,4 @@ cd frontend && npm install && npm start
 
 ---
 
-**Made with ❤️ by the open source community**
-
-*Star ⭐ this repo if you find it useful!*
+**Made with ❤️ for Java Expo CCE 25**
