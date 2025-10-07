@@ -216,15 +216,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Spring Boot team for the excellent framework
-- React team for the amazing frontend library
-- All contributors who help make Settlr better
+- Initial Frontend by [Rohan](https://github.com/rohanks-hub)
+- Frontend Polish by [Siddhanth](https://github.com/siddhanth-dev)
+- Improved Features and Login System by [Sreeram](https://github.com/WanderingHumanid)
+- CodeScape Project Expo (Semester 3) by Christ College of Engineering, Irinjalakuda
 
 ---
 
 <div align="center">
 
-**Built with ❤️ by [LORDv1shnu](https://github.com/LORDv1shnu)**
+**Built with ❤️ by [LORDv1shnu](https://github.com/LORDv1shnu) and Team**
 
 [⭐ Star this repo](https://github.com/LORDv1shnu/settlr) if you find it helpful!
 
