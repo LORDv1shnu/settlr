@@ -89,126 +89,138 @@ const Signup = ({ onSignupSuccess, onBackToLogin }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-purple-50 py-6 sm:py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-6 sm:space-y-8">
+        {/* Back Button */}
+        <button
+          onClick={onBackToLogin}
+          className="flex items-center text-blue-600 hover:text-blue-700 transition-colors mb-4"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          <span className="text-sm sm:text-base">Back to Login</span>
+        </button>
+
         {/* Logo and Header */}
-        <div className="text-center mb-8">
-          <div className="mx-auto w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-            <span className="text-2xl font-bold text-white">S</span>
+        <div className="text-center">
+          <div className="flex justify-center mb-4 sm:mb-6">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <UserPlus className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
+            </div>
           </div>
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+          <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             Create your account
           </h2>
-          <p className="text-gray-600">
-            Join Settlr to manage expenses with friends
+          <p className="text-sm sm:text-base text-gray-600">
+            Join Settlr and start splitting expenses
           </p>
         </div>
 
-        {/* Main Card */}
-        <div className="bg-white rounded-2xl shadow-xl p-8 border border-gray-100">
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-center">
-              {error}
-            </div>
-          )}
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6 sm:p-8">
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+                <p className="text-red-800 text-sm sm:text-base">{error}</p>
+              </div>
+            )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
                 Full Name
               </label>
               <input
-                type="text"
+                id="name"
                 name="name"
-                required
+                type="text"
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="Name"
-                className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                required
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                placeholder="Enter your full name"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Email Address
               </label>
               <input
-                type="email"
+                id="email"
                 name="email"
-                required
+                type="email"
                 value={formData.email}
                 onChange={handleChange}
-                placeholder="name@example.com"
-                className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                required
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                placeholder="Enter your email"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
                 Password
               </label>
               <input
-                type="password"
+                id="password"
                 name="password"
-                required
+                type="password"
                 value={formData.password}
                 onChange={handleChange}
-                placeholder="••••••••"
-                className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                required
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                placeholder="Create a password (min 4 characters)"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
                 Confirm Password
               </label>
               <input
-                type="password"
+                id="confirmPassword"
                 name="confirmPassword"
-                required
+                type="password"
                 value={formData.confirmPassword}
                 onChange={handleChange}
-                placeholder="••••••••"
-                className="block w-full rounded-lg border border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 p-3"
+                required
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                placeholder="Confirm your password"
               />
             </div>
 
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center p-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg font-semibold hover:opacity-95 disabled:opacity-60 transition-opacity"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="animate-spin h-5 w-5 mr-2" />
-                    Creating account...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="h-5 w-5 mr-2" />
-                    Sign up
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 sm:py-4 px-4 sm:px-6 rounded-lg hover:from-blue-600 hover:to-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 font-medium transition-all duration-200 text-sm sm:text-base"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center">
+                  <Loader2 className="animate-spin h-4 w-4 sm:h-5 sm:w-5 mr-2" />
+                  Creating Account...
+                </span>
+              ) : 'Create Account'}
+            </button>
           </form>
 
-          <div className="mt-6 text-center">
-            <button
-              onClick={onBackToLogin}
-              className="inline-flex items-center text-sm text-gray-600 hover:text-blue-600 transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back to login
-            </button>
+          <div className="mt-6 sm:mt-8 text-center">
+            <p className="text-sm sm:text-base text-gray-600">
+              Already have an account?{' '}
+              <button
+                onClick={onBackToLogin}
+                className="text-blue-600 hover:text-blue-700 font-medium transition-colors"
+              >
+                Sign in here
+              </button>
+            </p>
           </div>
         </div>
 
-        {/* Info notice */}
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">
-            By signing up, you agree to split expenses fairly and settle up promptly
+        {/* Terms */}
+        <div className="text-center">
+          <p className="text-xs sm:text-sm text-gray-500">
+            By creating an account, you agree to our{' '}
+            <a href="#" className="text-blue-600 hover:text-blue-700">Terms of Service</a>{' '}
+            and{' '}
+            <a href="#" className="text-blue-600 hover:text-blue-700">Privacy Policy</a>
           </p>
         </div>
       </div>

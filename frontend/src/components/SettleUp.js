@@ -9,6 +9,7 @@ const SettleUp = ({ currentUser }) => {
   const [pendingSettlements, setPendingSettlements] = useState([]);
   const [loading, setLoading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [animatingGroup, setAnimatingGroup] = useState(null);
 
   const API_BASE = 'http://localhost:8080/api';
 
@@ -174,9 +175,18 @@ const SettleUp = ({ currentUser }) => {
     setPendingSettlements(pendingSettlements);
   };
 
-  const handleGroupSelect = (group) => {
-    setSelectedGroup(group);
-    fetchGroupExpenses(group.id);
+  const handleGroupSelect = async (group) => {
+    // Add animation state to prevent multiple clicks
+    if (animatingGroup === group.id || loading) return;
+
+    setAnimatingGroup(group.id);
+
+    // Add a small delay for visual feedback
+    setTimeout(() => {
+      setSelectedGroup(group);
+      fetchGroupExpenses(group.id);
+      setAnimatingGroup(null);
+    }, 150);
   };
 
   const markAsSettled = async (settlement) => {
@@ -249,10 +259,10 @@ const SettleUp = ({ currentUser }) => {
 
   if (loading && !selectedGroup) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-2 sm:p-6">
         <div className="max-w-6xl mx-auto">
-          <div className="bg-white rounded-xl shadow-lg p-8 text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <div className="bg-white rounded-xl shadow-lg p-4 sm:p-8">
+            <div className="animate-breathe rounded-full h-12 w-12 bg-blue-100 border-2 border-blue-500 mx-auto mb-4"></div>
             <p className="text-gray-600">Loading groups...</p>
           </div>
         </div>
@@ -261,36 +271,57 @@ const SettleUp = ({ currentUser }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-2 sm:p-6">
       <div className="max-w-6xl mx-auto">
-        <div className="bg-white rounded-xl shadow-lg p-8">
-          <div className="flex items-center space-x-3 mb-6">
-            <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
-              <DollarSign className="w-6 h-6 text-white" />
+        <div className="bg-white rounded-xl shadow-lg p-4 sm:p-8">
+          <div className="flex items-center space-x-3 mb-4 sm:mb-6">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center">
+              <DollarSign className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-800">Settle Up</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">Settle Up</h1>
           </div>
 
           {!selectedGroup ? (
-            <div>
-              <h2 className="text-xl font-semibold text-gray-700 mb-4">Select a Group to Settle</h2>
+            <div className="animate-fadeIn">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-700 mb-3 sm:mb-4">Select a Group to Settle</h2>
               {groups.length === 0 ? (
-                <div className="text-center py-12">
-                  <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500">No groups found. Create a group first to start settling expenses.</p>
+                <div className="text-center py-8 sm:py-12 animate-slideIn">
+                  <AlertCircle className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
+                  <p className="text-sm sm:text-base text-gray-500 px-4">No groups found. Create a group first to start settling expenses.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {groups.map(group => (
+                <div className="responsive-grid animate-slideIn">
+                  {groups.map((group, index) => (
                     <div
                       key={group.id}
                       onClick={() => handleGroupSelect(group)}
-                      className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg p-6 text-white cursor-pointer hover:from-blue-600 hover:to-purple-700 transition-all duration-200 transform hover:scale-105 shadow-lg"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleGroupSelect(group);
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`Select group ${group.name}`}
+                      style={{ animationDelay: `${index * 100}ms` }}
+                      className={`
+                        bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-4 sm:p-6 text-white
+                        cursor-pointer shadow-lg transition-all duration-300 ease-out
+                        hover:from-blue-600 hover:to-purple-700 hover:shadow-xl hover:-translate-y-1
+                        focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-opacity-50
+                        active:scale-95 touch-manipulation animate-fadeIn
+                        ${animatingGroup === group.id ? 'animate-pulse scale-95' : ''}
+                        ${processing ? 'pointer-events-none opacity-75' : ''}
+                      `}
                     >
-                      <h3 className="text-lg font-semibold mb-2">{group.name}</h3>
-                      <p className="text-blue-100 text-sm mb-3">{group.description}</p>
-                      <div className="text-xs text-blue-200">
-                        {group.members?.length || 0} members
+                      <h3 className="text-base sm:text-lg font-semibold mb-2 line-clamp-1">{group.name}</h3>
+                      <p className="text-blue-100 text-xs sm:text-sm mb-3 line-clamp-2">{group.description}</p>
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs text-blue-200">
+                          {group.members?.length || 0} members
+                        </div>
+                        <ArrowRight className="w-4 h-4 text-blue-200 opacity-70" />
                       </div>
                     </div>
                   ))}
@@ -298,151 +329,133 @@ const SettleUp = ({ currentUser }) => {
               )}
             </div>
           ) : (
-            <div>
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-xl font-semibold text-gray-700">
-                    {selectedGroup.name}
-                  </h2>
-                  <p className="text-sm text-gray-500">{selectedGroup.description}</p>
+            <div className="animate-slideIn">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 space-y-3 sm:space-y-0">
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={() => setSelectedGroup(null)}
+                    className="text-blue-600 hover:text-blue-700 text-sm sm:text-base"
+                  >
+                    ← Back to groups
+                  </button>
+                  <div className="text-sm sm:text-base text-gray-500">|</div>
+                  <h2 className="text-lg sm:text-xl font-semibold text-gray-800 truncate">{selectedGroup.name}</h2>
                 </div>
                 <button
-                  onClick={() => {
-                    setSelectedGroup(null);
-                    setExpenses([]);
-                    setPendingSettlements([]);
-                    setExistingSettlements([]);
-                  }}
-                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+                  onClick={() => fetchGroupExpenses(selectedGroup.id)}
+                  disabled={loading}
+                  className="bg-blue-600 text-white px-3 py-2 sm:px-4 sm:py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm sm:text-base flex items-center justify-center"
                 >
-                  ← Back to Groups
+                  {loading ? (
+                    <>
+                      <div className="animate-soft-pulse rounded-full h-4 w-4 bg-white bg-opacity-30 mr-2"></div>
+                      Loading...
+                    </>
+                  ) : 'Refresh'}
                 </button>
               </div>
 
               {loading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Calculating settlements...</p>
+                <div className="text-center py-8 sm:py-12">
+                  <div className="animate-breathe rounded-full h-8 w-8 sm:h-12 sm:w-12 bg-blue-100 border-2 border-blue-500 mx-auto mb-4"></div>
+                  <p className="text-gray-600 text-sm sm:text-base">Calculating balances...</p>
                 </div>
               ) : (
-                <>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                   {/* Pending Settlements */}
-                  {pendingSettlements.length === 0 ? (
-                    <div className="text-center py-12 bg-green-50 rounded-xl border-2 border-green-200">
-                      <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-                      <h3 className="text-2xl font-bold text-green-700 mb-2">All Settled Up! 🎉</h3>
-                      <p className="text-green-600">No outstanding balances in this group.</p>
-                    </div>
-                  ) : (
-                    <div className="mb-8">
-                      <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                        <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm mr-2">
-                          {pendingSettlements.length}
-                        </span>
-                        Pending Settlements
-                      </h3>
-                      <div className="space-y-4">
+                  <div className="bg-gray-50 rounded-xl p-4 sm:p-6">
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-3 sm:mb-4">Pending Settlements</h3>
+                    {pendingSettlements.length === 0 ? (
+                      <div className="text-center py-6 sm:py-8">
+                        <CheckCircle className="w-12 h-12 sm:w-16 sm:h-16 text-green-400 mx-auto mb-4" />
+                        <p className="text-green-600 font-medium text-sm sm:text-base">All settled up! 🎉</p>
+                        <p className="text-gray-500 text-xs sm:text-sm mt-1">No pending settlements in this group</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 sm:space-y-4">
                         {pendingSettlements.map((settlement, index) => (
-                          <div
-                            key={index}
-                            className="bg-gradient-to-r from-orange-50 to-yellow-50 border-l-4 border-orange-400 p-6 rounded-r-xl shadow-sm hover:shadow-md transition-shadow"
-                          >
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-4 flex-1">
-                                <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center">
-                                  <ArrowRight className="w-6 h-6 text-white" />
+                          <div key={index} className="bg-white rounded-lg p-3 sm:p-4 border border-gray-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
+                              <div className="flex items-center space-x-3">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-red-100 rounded-full flex items-center justify-center">
+                                  <span className="text-red-600 text-xs sm:text-sm font-semibold">
+                                    {settlement.from.charAt(0).toUpperCase()}
+                                  </span>
                                 </div>
-                                <div className="flex-1">
-                                  <p className="text-gray-800 mb-1">
-                                    <span className="font-bold text-lg">{settlement.from}</span>
-                                    <span className="text-gray-600 mx-2">owes</span>
-                                    <span className="font-bold text-lg">{settlement.to}</span>
-                                  </p>
-                                  <p className="text-3xl font-bold text-green-600">
-                                    {formatCurrency(settlement.amount)}
-                                  </p>
+                                <div className="flex items-center space-x-2 min-w-0 flex-1">
+                                  <span className="text-sm sm:text-base font-medium text-gray-800 truncate">
+                                    {settlement.from}
+                                  </span>
+                                  <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                                  <span className="text-sm sm:text-base font-medium text-gray-800 truncate">
+                                    {settlement.to}
+                                  </span>
                                 </div>
                               </div>
-                              <button
-                                onClick={() => markAsSettled(settlement)}
-                                disabled={processing}
-                                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg transition-colors font-semibold shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                {processing ? 'Recording...' : 'Mark as Settled'}
-                              </button>
+                              <div className="flex items-center space-x-3 sm:justify-end">
+                                <div className="text-lg sm:text-xl font-bold text-red-600">
+                                  {formatCurrency(settlement.amount)}
+                                </div>
+                                <button
+                                  onClick={() => markAsSettled(settlement)}
+                                  disabled={processing}
+                                  className="bg-green-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 text-xs sm:text-sm font-medium flex-shrink-0"
+                                >
+                                  {processing ? 'Processing...' : 'Mark Paid'}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
 
                   {/* Settlement History */}
-                  {existingSettlements.length > 0 && (
-                    <div className="mb-8">
-                      <h3 className="text-lg font-semibold text-gray-700 mb-4 flex items-center">
-                        <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-                        Settlement History ({existingSettlements.length})
-                      </h3>
-                      <div className="bg-gray-50 rounded-xl p-4">
-                        <div className="space-y-3">
-                          {existingSettlements.slice(0, 5).map(settlement => (
-                            <div key={settlement.id} className="flex justify-between items-center text-sm border-b border-gray-200 pb-2 last:border-0">
-                              <div>
-                                <span className="font-medium text-gray-700">{settlement.fromUserName}</span>
-                                <span className="text-gray-500 mx-2">→</span>
-                                <span className="font-medium text-gray-700">{settlement.toUserName}</span>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-semibold text-green-600">{formatCurrency(settlement.amount)}</div>
-                                <div className="text-gray-400 text-xs">{formatDate(settlement.settledAt)}</div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                        {existingSettlements.length > 5 && (
-                          <p className="text-gray-500 text-sm mt-3 text-center">
-                            ...and {existingSettlements.length - 5} more settlements
-                          </p>
-                        )}
+                  <div className="bg-gray-50 rounded-xl p-4 sm:p-6">
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-800 mb-3 sm:mb-4">Settlement History</h3>
+                    {existingSettlements.length === 0 ? (
+                      <div className="text-center py-6 sm:py-8">
+                        <DollarSign className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500 text-sm sm:text-base">No settlements yet</p>
+                        <p className="text-gray-400 text-xs sm:text-sm mt-1">Settlement history will appear here</p>
                       </div>
-                    </div>
-                  )}
-
-                  
-
-                  {/* Recent Expenses */}
-                  {expenses.length > 0 && (
-                    <div className="mt-8">
-                      <h3 className="text-lg font-semibold text-gray-700 mb-4">
-                        Recent Expenses ({expenses.length})
-                      </h3>
-                      <div className="bg-gray-50 rounded-xl p-4">
-                        <div className="space-y-3">
-                          {expenses.slice(0, 5).map(expense => (
-                            <div key={expense.id} className="flex justify-between items-center text-sm border-b border-gray-200 pb-2 last:border-0">
-                              <div>
-                                <div className="font-medium text-gray-800">{expense.description}</div>
-                                <div className="text-gray-500 text-xs">
-                                  Paid by {expense.paidBy?.name} • Split {expense.splitBetweenUsers?.length} ways
+                    ) : (
+                      <div className="space-y-3 sm:space-y-4 max-h-96 overflow-y-auto">
+                        {existingSettlements
+                          .sort((a, b) => new Date(b.settledAt) - new Date(a.settledAt))
+                          .map((settlement, index) => (
+                            <div key={index} className="bg-white rounded-lg p-3 sm:p-4 border border-gray-200">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3 min-w-0 flex-1 mr-4">
+                                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                    <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-600" />
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <span className="text-sm sm:text-base font-medium text-gray-800 truncate">
+                                        {settlement.fromUserName}
+                                      </span>
+                                      <ArrowRight className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400 flex-shrink-0" />
+                                      <span className="text-sm sm:text-base font-medium text-gray-800 truncate">
+                                        {settlement.toUserName}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                                      {formatDate(settlement.settledAt)}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="text-base sm:text-lg font-bold text-green-600 flex-shrink-0">
+                                  {formatCurrency(settlement.amount)}
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="font-semibold text-gray-800">{formatCurrency(expense.amount)}</div>
-                                <div className="text-gray-500 text-xs">{formatCurrency(expense.amountPerPerson)} each</div>
-                              </div>
                             </div>
                           ))}
-                        </div>
-                        {expenses.length > 5 && (
-                          <p className="text-gray-500 text-sm mt-3 text-center">
-                            ...and {expenses.length - 5} more expenses
-                          </p>
-                        )}
                       </div>
-                    </div>
-                  )}
-                </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Plus, UserPlus, Settings, DollarSign, Calendar, TrendingUp, TrendingDown, ArrowRight, Trash2, X, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import PropTypes from 'prop-types';
+import { Users, Plus, UserPlus, Settings, DollarSign, Calendar, TrendingUp, TrendingDown, ArrowRight, Trash2, X, RefreshCw, Receipt } from 'lucide-react';
 
 const Groups = ({ currentUser }) => {
   const [groups, setGroups] = useState([]);
@@ -11,6 +12,7 @@ const Groups = ({ currentUser }) => {
   const [groupExpenses, setGroupExpenses] = useState({});
   const [loading, setLoading] = useState(false);
   const [loadingBalances, setLoadingBalances] = useState(false);
+  const [error, setError] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -30,135 +32,264 @@ const Groups = ({ currentUser }) => {
   const [addMemberSearchQuery, setAddMemberSearchQuery] = useState('');
   const [addMemberSearchResults, setAddMemberSearchResults] = useState([]);
 
+  // Individual operation loading states
+  const [deletingGroupId, setDeletingGroupId] = useState(null);
+  const [invitingUserId, setInvitingUserId] = useState(null);
+
+  // Refs for cleanup
+  const searchTimeoutRef = useRef(null);
+  const addMemberSearchTimeoutRef = useRef(null);
+  const abortControllerRef = useRef(null);
+  const mountedRef = useRef(true);
+
   const API_BASE = 'http://localhost:8080/api';
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchGroups();
+  // Memoized fetchGroups function to prevent infinite loops
+  const fetchGroups = useCallback(async () => {
+    if (!currentUser?.id) {
+      setGroups([]);
+      return;
     }
-  }, [currentUser]);
 
-  useEffect(() => {
-    if (groups.length > 0) {
-      loadGroupBalancesAndExpenses();
-    }
-  }, [groups]);
-
-  const fetchGroups = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE}/groups/user/${currentUser.id}`);
-      if (response.ok) {
-        const groupsData = await response.json();
-        setGroups(groupsData);
+      setError(null);
+
+      // Cancel previous request if still pending
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
       }
+
+      abortControllerRef.current = new AbortController();
+
+      const response = await fetch(`${API_BASE}/groups/user/${currentUser.id}`, {
+        signal: abortControllerRef.current.signal
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch groups: ${response.status} ${response.statusText}`);
+      }
+
+      const groupsData = await response.json();
+      setGroups(Array.isArray(groupsData) ? groupsData : []);
     } catch (error) {
-      console.error('Error fetching groups:', error);
+      if (error.name !== 'AbortError') {
+        console.error('Error fetching groups:', error);
+        setError('Failed to load groups. Please try again.');
+        setGroups([]);
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
-  };
+  }, [currentUser?.id, API_BASE]);
 
-  const searchUsers = async (query) => {
-    if (!query || query.trim().length < 4) {
+  // Memoized function to load balances and expenses
+  const loadGroupBalancesAndExpenses = useCallback(async () => {
+    if (loadingBalances || groups.length === 0) return;
+
+    setLoadingBalances(true);
+    const balances = {};
+    const expenses = {};
+
+    try {
+      await Promise.allSettled(
+        groups.map(async (group) => {
+          try {
+            const [balanceResponse, expenseResponse] = await Promise.all([
+              fetch(`${API_BASE}/expenses/group/${group.id}/balances`),
+              fetch(`${API_BASE}/expenses/group/${group.id}`)
+            ]);
+
+            if (balanceResponse.ok) {
+              const balanceData = await balanceResponse.json();
+              balances[group.id] = balanceData;
+            }
+
+            if (expenseResponse.ok) {
+              const expenseData = await expenseResponse.json();
+              expenses[group.id] = Array.isArray(expenseData) ? expenseData : [];
+            }
+          } catch (error) {
+            console.error(`Error loading data for group ${group.id}:`, error);
+          }
+        })
+      );
+
+      setGroupBalances(balances);
+      setGroupExpenses(expenses);
+    } finally {
+      setLoadingBalances(false);
+    }
+  }, [groups, loadingBalances, API_BASE]);
+
+  // Debounced search function
+  const searchUsers = useCallback(async (query) => {
+    if (!query || query.trim().length < 2) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length < 2) {
       setSearchResults([]);
       return;
     }
 
     try {
       setIsSearching(true);
-      const response = await fetch(`${API_BASE}/users/search?name=${encodeURIComponent(query)}`);
-      if (response.ok) {
-        const usersData = await response.json();
-        // Filter out current user and already selected members
-        const filtered = usersData.filter(user => 
-          user.id !== currentUser.id && !formData.memberIds.includes(user.id)
-        );
-        setSearchResults(filtered);
+      const response = await fetch(`${API_BASE}/users/search?name=${encodeURIComponent(trimmedQuery)}`);
+
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.status}`);
       }
+
+      const usersData = await response.json();
+      const filtered = Array.isArray(usersData)
+        ? usersData.filter(user =>
+            user.id !== currentUser?.id && !formData.memberIds.includes(user.id)
+          )
+        : [];
+      setSearchResults(filtered);
     } catch (error) {
       console.error('Error searching users:', error);
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
-  };
+  }, [currentUser?.id, formData.memberIds, API_BASE]);
 
-  const searchUsersForAddMember = async (query) => {
-    if (!query || query.trim().length < 4) {
+  const searchUsersForAddMember = useCallback(async (query) => {
+    if (!query || query.trim().length < 2 || !selectedGroup) {
       setAddMemberSearchResults([]);
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE}/users/search?name=${encodeURIComponent(query)}`);
-      if (response.ok) {
-        const usersData = await response.json();
-        // Filter out current group members
-        const memberIds = selectedGroup.members?.map(m => m.id) || [];
-        const filtered = usersData.filter(user => !memberIds.includes(user.id));
-        setAddMemberSearchResults(filtered);
-      }
-    } catch (error) {
-      console.error('Error searching users:', error);
-    }
-  };
+      const response = await fetch(`${API_BASE}/users/search?name=${encodeURIComponent(query.trim())}`);
 
-  // Debounce search
+      if (!response.ok) {
+        throw new Error(`Search failed: ${response.status}`);
+      }
+
+      const usersData = await response.json();
+      const memberIds = selectedGroup.members?.map(m => m.id) || [];
+      const filtered = Array.isArray(usersData)
+        ? usersData.filter(user => !memberIds.includes(user.id))
+        : [];
+      setAddMemberSearchResults(filtered);
+    } catch (error) {
+      console.error('Error searching users for add member:', error);
+      setAddMemberSearchResults([]);
+    }
+  }, [selectedGroup, API_BASE]);
+
+  // Effect for initial data loading
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (currentUser?.id) {
+      fetchGroups();
+    }
+
+    // Cleanup function
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [currentUser?.id, fetchGroups]);
+
+  // Effect for loading balances and expenses (only when groups change)
+  useEffect(() => {
+    if (groups.length > 0) {
+      loadGroupBalancesAndExpenses();
+    }
+  }, [groups.length]); // Only depend on length to avoid infinite loops
+
+  // Debounced search effects
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
       searchUsers(searchQuery);
     }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, searchUsers]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      searchUsersForAddMember(addMemberSearchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [addMemberSearchQuery]);
-
-  const loadGroupBalancesAndExpenses = async () => {
-    if (loadingBalances) return;
-
-    setLoadingBalances(true);
-    const balances = {};
-    const expenses = {};
-
-    for (const group of groups) {
-      try {
-        // Fetch group balances
-        const balanceResponse = await fetch(`${API_BASE}/expenses/group/${group.id}/balances`);
-        if (balanceResponse.ok) {
-          const balanceData = await balanceResponse.json();
-          balances[group.id] = balanceData;
-        }
-
-        // Fetch group expenses
-        const expenseResponse = await fetch(`${API_BASE}/expenses/group/${group.id}`);
-        if (expenseResponse.ok) {
-          const expenseData = await expenseResponse.json();
-          expenses[group.id] = expenseData;
-        }
-      } catch (error) {
-        console.error('Error loading data for group:', group.id, error);
-      }
+    if (addMemberSearchTimeoutRef.current) {
+      clearTimeout(addMemberSearchTimeoutRef.current);
     }
 
-    setGroupBalances(balances);
-    setGroupExpenses(expenses);
-    setLoadingBalances(false);
-  };
+    addMemberSearchTimeoutRef.current = setTimeout(() => {
+      searchUsersForAddMember(addMemberSearchQuery);
+    }, 300);
+
+    return () => {
+      if (addMemberSearchTimeoutRef.current) {
+        clearTimeout(addMemberSearchTimeoutRef.current);
+      }
+    };
+  }, [addMemberSearchQuery, searchUsersForAddMember]);
+
+  // Effect for component unmount cleanup
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+      // Cleanup all timeouts and abort controllers
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      if (addMemberSearchTimeoutRef.current) {
+        clearTimeout(addMemberSearchTimeoutRef.current);
+      }
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   const handleCreateGroup = async (e) => {
     e.preventDefault();
+
+    // Form validation
+    if (!formData.name?.trim()) {
+      alert('Please enter a group name');
+      return;
+    }
+
+    if (formData.name.trim().length < 3) {
+      alert('Group name must be at least 3 characters long');
+      return;
+    }
+
+    if (formData.name.trim().length > 50) {
+      alert('Group name must be less than 50 characters');
+      return;
+    }
+
+    if (formData.description && formData.description.length > 200) {
+      alert('Description must be less than 200 characters');
+      return;
+    }
+
     try {
       setLoading(true);
+      setError(null);
 
-      // Create group with only current user as member
+      // Sanitize input data
       const groupData = {
-        name: formData.name,
-        description: formData.description,
+        name: formData.name.trim(),
+        description: formData.description?.trim() || '',
         memberIds: [currentUser.id] // Only add creator initially
       };
 
@@ -170,35 +301,47 @@ const Groups = ({ currentUser }) => {
         body: JSON.stringify(groupData),
       });
 
-      if (response.ok) {
-        const newGroup = await response.json();
-        
-        // Send invitations to selected members
-        if (formData.memberIds.length > 0) {
-          await Promise.all(
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create group: ${response.status} - ${errorText}`);
+      }
+
+      const newGroup = await response.json();
+
+      // Send invitations to selected members
+      if (formData.memberIds.length > 0) {
+        try {
+          const invitationResults = await Promise.allSettled(
             formData.memberIds.map(memberId =>
               fetch(`${API_BASE}/invitations/send?groupId=${newGroup.id}&inviterId=${currentUser.id}&inviteeId=${memberId}`, {
                 method: 'POST'
               })
             )
           );
-          alert(`Group created! Invitations sent to ${formData.memberIds.length} user(s).`);
-        }
 
-        setGroups(prev => [...prev, newGroup]);
-        setFormData({ name: '', description: '', memberIds: [] });
-        setSearchQuery('');
-        setSearchResults([]);
-        setShowCreateGroup(false);
-        console.log('Group created successfully:', newGroup);
+          const successCount = invitationResults.filter(result =>
+            result.status === 'fulfilled' && result.value.ok
+          ).length;
+
+          alert(`Group created successfully! ${successCount} out of ${formData.memberIds.length} invitation(s) sent.`);
+        } catch (inviteError) {
+          console.error('Error sending invitations:', inviteError);
+          alert('Group created successfully, but some invitations failed to send.');
+        }
       } else {
-        const errorText = await response.text();
-        console.error('Failed to create group:', errorText);
-        alert('Failed to create group. Please try again.');
+        alert('Group created successfully!');
       }
+
+      // Update state and reset form
+      await fetchGroups();
+      setFormData({ name: '', description: '', memberIds: [] });
+      setSearchQuery('');
+      setSearchResults([]);
+      setShowCreateGroup(false);
     } catch (error) {
       console.error('Failed to create group:', error);
-      alert('Failed to create group. Please try again.');
+      setError(error.message);
+      alert(`Failed to create group: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -220,6 +363,7 @@ const Groups = ({ currentUser }) => {
 
   const handleAddMember = async (userId) => {
     try {
+      setInvitingUserId(userId); // Set loading state for inviting user
       // Send invitation instead of directly adding
       const response = await fetch(`${API_BASE}/invitations/send?groupId=${selectedGroup.id}&inviterId=${currentUser.id}&inviteeId=${userId}`, {
         method: 'POST'
@@ -238,6 +382,8 @@ const Groups = ({ currentUser }) => {
     } catch (error) {
       console.error('Failed to send invitation:', error);
       alert('Failed to send invitation. Please try again.');
+    } finally {
+      setInvitingUserId(null); // Reset loading state
     }
   };
 
@@ -247,6 +393,7 @@ const Groups = ({ currentUser }) => {
     }
 
     try {
+      setDeletingGroupId(groupId); // Set loading state for deleting group
       const response = await fetch(`${API_BASE}/groups/${groupId}`, {
         method: 'DELETE'
       });
@@ -260,6 +407,8 @@ const Groups = ({ currentUser }) => {
     } catch (error) {
       console.error('Error deleting group:', error);
       alert('Failed to delete group. Please try again.');
+    } finally {
+      setDeletingGroupId(null); // Reset loading state
     }
   };
 
@@ -293,8 +442,35 @@ const Groups = ({ currentUser }) => {
   const handleCreateExpense = async (e) => {
     e.preventDefault();
     
-    if (!expenseFormData.description || !expenseFormData.amount || !expenseFormData.paidById) {
-      alert('Please fill in all required fields');
+    // Enhanced form validation
+    if (!expenseFormData.description?.trim()) {
+      alert('Please enter a description for the expense');
+      return;
+    }
+
+    if (expenseFormData.description.trim().length < 3) {
+      alert('Description must be at least 3 characters long');
+      return;
+    }
+
+    if (expenseFormData.description.trim().length > 100) {
+      alert('Description must be less than 100 characters');
+      return;
+    }
+
+    const amount = parseFloat(expenseFormData.amount);
+    if (!expenseFormData.amount || isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    if (amount > 1000000) {
+      alert('Amount cannot exceed ₹10,00,000');
+      return;
+    }
+
+    if (!expenseFormData.paidById) {
+      alert('Please select who paid for the expense');
       return;
     }
 
@@ -305,34 +481,42 @@ const Groups = ({ currentUser }) => {
 
     try {
       setLoading(true);
+      setError(null);
+
+      const expenseData = {
+        description: expenseFormData.description.trim(),
+        amount: amount,
+        paidById: parseInt(expenseFormData.paidById),
+        groupId: selectedGroup.id,
+        splitBetween: expenseFormData.splitBetween.map(id => parseInt(id))
+      };
+
       const response = await fetch(`${API_BASE}/expenses`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: expenseFormData.description,
-          amount: parseFloat(expenseFormData.amount),
-          paidById: expenseFormData.paidById,
-          groupId: selectedGroup.id,
-          splitBetween: expenseFormData.splitBetween
-        })
+        body: JSON.stringify(expenseData)
       });
 
-      if (response.ok) {
-        alert('Expense created successfully!');
-        setShowAddExpense(false);
-        setExpenseFormData({
-          description: '',
-          amount: '',
-          paidById: '',
-          splitBetween: []
-        });
-        fetchGroups(); // Refresh to update balances
-      } else {
-        alert('Failed to create expense');
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to create expense: ${response.status} - ${errorText}`);
       }
+
+      alert('Expense created successfully!');
+      setShowAddExpense(false);
+      setExpenseFormData({
+        description: '',
+        amount: '',
+        paidById: '',
+        splitBetween: []
+      });
+
+      // Refresh data to update balances
+      await Promise.all([fetchGroups(), loadGroupBalancesAndExpenses()]);
     } catch (error) {
       console.error('Error creating expense:', error);
-      alert('Failed to create expense. Please try again.');
+      setError(error.message);
+      alert(`Failed to create expense: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -347,82 +531,158 @@ const Groups = ({ currentUser }) => {
     }));
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric'
-    });
-  };
+  // Enhanced utility functions with better error handling
+  const formatDate = useCallback((dateString) => {
+    if (!dateString) return 'Recently';
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR'
-    }).format(amount || 0);
-  };
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return 'Recently';
 
-  const getUserBalance = (groupId, userId) => {
-    // The backend balance calculation already accounts for settlements
-    // So we can just use the backend API response directly
-    const balance = groupBalances[groupId];
-    if (!balance || !balance.userBalances) return 0;
-    return balance.userBalances[userId] || 0;
-  };
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error);
+      return 'Recently';
+    }
+  }, []);
 
-  const getGroupTotalExpenses = (groupId) => {
-    const balance = groupBalances[groupId];
-    return balance?.totalExpenses || 0;
-  };
+  const formatCurrency = useCallback((amount) => {
+    if (amount === null || amount === undefined || isNaN(amount)) {
+      return '₹0.00';
+    }
 
-  const getGroupExpenseCount = (groupId) => {
-    const expenses = groupExpenses[groupId];
-    return expenses?.length || 0;
-  };
+    try {
+      return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(Number(amount));
+    } catch (error) {
+      console.error('Error formatting currency:', error);
+      return `₹${Number(amount).toFixed(2)}`;
+    }
+  }, []);
+
+  const getUserBalance = useCallback((groupId, userId) => {
+    if (!groupId || !userId) return 0;
+
+    try {
+      const balance = groupBalances[groupId];
+      if (!balance || !balance.userBalances) return 0;
+
+      const userBalance = balance.userBalances[userId];
+      return typeof userBalance === 'number' ? userBalance : 0;
+    } catch (error) {
+      console.error('Error getting user balance:', error);
+      return 0;
+    }
+  }, [groupBalances]);
+
+  const getGroupTotalExpenses = useCallback((groupId) => {
+    if (!groupId) return 0;
+
+    try {
+      const balance = groupBalances[groupId];
+      const total = balance?.totalExpenses;
+      return typeof total === 'number' ? total : 0;
+    } catch (error) {
+      console.error('Error getting group total expenses:', error);
+      return 0;
+    }
+  }, [groupBalances]);
+
+  const getGroupExpenseCount = useCallback((groupId) => {
+    if (!groupId) return 0;
+
+    try {
+      const expenses = groupExpenses[groupId];
+      return Array.isArray(expenses) ? expenses.length : 0;
+    } catch (error) {
+      console.error('Error getting group expense count:', error);
+      return 0;
+    }
+  }, [groupExpenses]);
+
+  // Early return for invalid user
+  if (!currentUser?.id) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6 flex items-center justify-center">
+        <div className="text-center">
+          <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-xl font-medium text-gray-900 mb-2">Access Denied</h3>
+          <p className="text-gray-600">Please log in to view your groups.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Your Groups</h1>
-            <p className="text-gray-600 mt-2">Manage your expense groups and track balances</p>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 p-2 sm:p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Error Display */}
+        {error && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-center">
+              <X className="w-5 h-5 text-red-500 mr-2" />
+              <p className="text-red-700 text-sm">{error}</p>
+              <button
+                onClick={() => setError(null)}
+                className="ml-auto text-red-500 hover:text-red-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center space-x-3">
-            <button
-              onClick={() => {
-                fetchGroups();
-                loadGroupBalancesAndExpenses();
-              }}
-              disabled={loading || loadingBalances}
-              className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-4 py-3 rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Refresh balances from database"
-            >
-              <RefreshCw className={`w-5 h-5 ${(loading || loadingBalances) ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
-            <button
-              onClick={() => setShowCreateGroup(true)}
-              className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105"
-            >
-              <Plus className="w-5 h-5" />
-              <span>Create Group</span>
-            </button>
+        )}
+
+        {/* Header */}
+        <div className="mb-6 sm:mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Your Groups</h1>
+              <p className="text-sm sm:text-base text-gray-600">
+                Manage your expense groups and track balances
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3">
+              <button
+                onClick={() => {
+                  fetchGroups();
+                  loadGroupBalancesAndExpenses();
+                }}
+                disabled={loading || loadingBalances}
+                className="bg-white text-gray-700 px-4 py-2 sm:px-6 sm:py-3 rounded-xl hover:bg-gray-50 transition-all duration-200 flex items-center justify-center space-x-2 shadow-md hover:shadow-lg transform hover:scale-105 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 sm:w-5 sm:h-5 ${(loading || loadingBalances) ? 'animate-soft-pulse' : ''}`} />
+                <span className="text-sm sm:text-base">Refresh</span>
+              </button>
+              <button
+                onClick={() => setShowCreateGroup(true)}
+                className="bg-gradient-to-r from-green-500 to-green-600 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 flex items-center justify-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105"
+              >
+                <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="text-sm sm:text-base">Create Group</span>
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Loading State */}
         {loading && (
-          <div className="text-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Loading groups...</p>
+          <div className="text-center py-8 sm:py-12">
+            <div className="animate-breathe rounded-full h-8 w-8 sm:h-12 sm:w-12 bg-blue-100 border-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-gray-600 text-sm sm:text-base">Loading groups...</p>
           </div>
         )}
 
         {/* Groups Grid */}
         {!loading && groups.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
             {groups.map((group) => {
               const userBalance = getUserBalance(group.id, currentUser.id);
               const totalExpenses = getGroupTotalExpenses(group.id);
@@ -431,29 +691,29 @@ const Groups = ({ currentUser }) => {
 
               return (
                 <div key={group.id} className="bg-white rounded-xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300">
-                  <div className="p-6">
+                  <div className="p-4 sm:p-6">
                     {/* Group Header */}
-                    <div className="flex items-start justify-between mb-6">
-                      <div className="flex items-center space-x-4">
-                        <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl flex items-center justify-center">
-                          <Users className="w-8 h-8 text-white" />
+                    <div className="flex items-start justify-between mb-4 sm:mb-6">
+                      <div className="flex items-center space-x-3 sm:space-x-4 min-w-0 flex-1">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 bg-gradient-to-r from-purple-500 to-blue-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                          <Users className="w-6 h-6 sm:w-8 sm:h-8 text-white" />
                         </div>
-                        <div>
-                          <h3 className="text-xl font-semibold text-gray-900">{group.name}</h3>
-                          <p className="text-sm text-gray-500 mt-1">{group.description}</p>
-                          <div className="flex items-center space-x-4 mt-2 text-sm text-gray-600">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">{group.name}</h3>
+                          <p className="text-xs sm:text-sm text-gray-500 mt-1 truncate">{group.description}</p>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 mt-2 text-xs sm:text-sm text-gray-600 space-y-1 sm:space-y-0">
                             <span className="flex items-center">
-                              <Users className="w-4 h-4 mr-1" />
+                              <Users className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                               {group.members?.length || 0} members
                             </span>
                             <span className="flex items-center">
-                              <Calendar className="w-4 h-4 mr-1" />
+                              <Calendar className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                               {group.createdAt ? formatDate(group.createdAt) : 'Recently'}
                             </span>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0 ml-2">
                         <button
                           onClick={() => {
                             setSelectedGroup(group);
@@ -465,185 +725,141 @@ const Groups = ({ currentUser }) => {
                             });
                             setShowAddExpense(true);
                           }}
-                          className="text-gray-400 hover:text-green-600 transition-colors p-2 rounded-lg hover:bg-green-50"
+                          className="text-gray-400 hover:text-green-600 transition-colors p-1.5 sm:p-2 rounded-lg hover:bg-green-50"
                           title="Add Expense"
                         >
-                          <Plus className="w-5 h-5" />
+                          <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                         <button
                           onClick={() => {
                             setSelectedGroup(group);
                             setShowAddMember(true);
                           }}
-                          className="text-gray-400 hover:text-blue-600 transition-colors p-2 rounded-lg hover:bg-blue-50"
+                          className="text-gray-400 hover:text-blue-600 transition-colors p-1.5 sm:p-2 rounded-lg hover:bg-blue-50"
                           title="Add Member"
                         >
-                          <UserPlus className="w-5 h-5" />
+                          <UserPlus className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                         <button
                           onClick={() => handleDeleteGroup(group.id)}
-                          className="text-gray-400 hover:text-red-600 transition-colors p-2 rounded-lg hover:bg-red-50"
+                          className="text-gray-400 hover:text-red-600 transition-colors p-1.5 sm:p-2 rounded-lg hover:bg-red-50"
                           title="Delete Group"
                         >
-                          <Trash2 className="w-5 h-5" />
+                          <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
                         </button>
                       </div>
                     </div>
 
                     {/* Group Statistics */}
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{expenseCount}</div>
+                    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
+                      <div className="text-center p-2 sm:p-3 bg-blue-50 rounded-lg">
+                        <div className="text-lg sm:text-2xl font-bold text-blue-600">{expenseCount}</div>
                         <div className="text-xs text-blue-600">Expenses</div>
                       </div>
-                      <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600">{formatCurrency(totalExpenses)}</div>
+                      <div className="text-center p-2 sm:p-3 bg-green-50 rounded-lg">
+                        <div className="text-sm sm:text-lg font-bold text-green-600 truncate">{formatCurrency(totalExpenses)}</div>
                         <div className="text-xs text-green-600">Total Spent</div>
                       </div>
-                      <div className="text-center p-3 bg-purple-50 rounded-lg">
-                        <div className={`text-2xl font-bold ${isSettled ? 'text-green-600' : userBalance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                      <div className={`text-center p-2 sm:p-3 rounded-lg ${
+                        isSettled ? 'bg-gray-50' : userBalance > 0 ? 'bg-green-50' : 'bg-red-50'
+                      }`}>
+                        <div className={`text-sm sm:text-lg font-bold truncate ${
+                          isSettled ? 'text-gray-600' : userBalance > 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
                           {isSettled ? 'Settled' : formatCurrency(Math.abs(userBalance))}
                         </div>
-                        <div className={`text-xs ${isSettled ? 'text-green-600' : userBalance < 0 ? 'text-red-600' : 'text-blue-600'}`}>
-                          {isSettled ? 'All Good' : userBalance < 0 ? 'You Owe' : 'You\'re Owed'}
+                        <div className={`text-xs ${
+                          isSettled ? 'text-gray-600' : userBalance > 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {isSettled ? 'All Good' : userBalance > 0 ? 'You\'re Owed' : 'You Owe'}
                         </div>
                       </div>
                     </div>
 
-                    {/* Your Balance Status */}
-                    <div className={`p-4 rounded-lg mb-4 ${
-                      isSettled ? 'bg-green-50 border border-green-200' :
-                      userBalance < 0 ? 'bg-red-50 border border-red-200' :
-                      'bg-blue-50 border border-blue-200'
-                    }`}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          {isSettled ? (
-                            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                              <TrendingUp className="w-4 h-4 text-green-600" />
+                    {/* Group Members */}
+                    <div className="mb-4 sm:mb-6">
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 sm:mb-3">Members</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {group.members?.slice(0, 6).map((member) => (
+                          <div
+                            key={member.id}
+                            className="flex items-center bg-gray-50 rounded-full px-2 sm:px-3 py-1 sm:py-1.5"
+                          >
+                            <div className="w-5 h-5 sm:w-6 sm:h-6 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mr-1.5 sm:mr-2">
+                              <span className="text-white text-xs font-medium">
+                                {member.name.charAt(0).toUpperCase()}
+                              </span>
                             </div>
-                          ) : userBalance < 0 ? (
-                            <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
-                              <TrendingDown className="w-4 h-4 text-red-600" />
-                            </div>
-                          ) : (
-                            <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                              <TrendingUp className="w-4 h-4 text-blue-600" />
-                            </div>
-                          )}
-                          <div>
-                            <p className={`font-medium ${
-                              isSettled ? 'text-green-800' :
-                              userBalance < 0 ? 'text-red-800' :
-                              'text-blue-800'
-                            }`}>
-                              {isSettled ? 'All settled up!' :
-                               userBalance < 0 ? `You owe ${formatCurrency(Math.abs(userBalance))}` :
-                               `You're owed ${formatCurrency(userBalance)}`}
-                            </p>
-                            <p className="text-xs text-gray-600">Your balance in this group</p>
+                            <span className="text-xs sm:text-sm text-gray-700 truncate max-w-20 sm:max-w-none">
+                              {member.name}
+                            </span>
                           </div>
-                        </div>
-                        {!isSettled && (
-                          <ArrowRight className="w-5 h-5 text-gray-400" />
+                        ))}
+                        {group.members?.length > 6 && (
+                          <div className="flex items-center bg-gray-100 rounded-full px-2 sm:px-3 py-1 sm:py-1.5">
+                            <span className="text-xs sm:text-sm text-gray-500">
+                              +{group.members.length - 6} more
+                            </span>
+                          </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Member Balances Summary */}
-                    <div className="mb-4">
-                      <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                        <Users className="w-4 h-4 mr-2" />
-                        Member Balances
-                      </h4>
-                      <div className="space-y-2 max-h-32 overflow-y-auto">
-                        {group.members?.map(member => {
-                          const memberBalance = getUserBalance(group.id, member.id);
-                          const memberIsSettled = Math.abs(memberBalance) < 0.01;
-
-                          return (
-                            <div key={member.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg group hover:bg-gray-100 transition-colors">
-                              <div className="flex items-center space-x-2 flex-1">
-                                <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full flex items-center justify-center text-white text-xs font-semibold">
-                                  {member.name.charAt(0).toUpperCase()}
+                    {/* Recent Expenses */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 mb-2 sm:mb-3">Recent Expenses</h4>
+                      {groupExpenses[group.id]?.length > 0 ? (
+                        <div className="space-y-2 sm:space-y-3">
+                          {groupExpenses[group.id].slice(0, 3).map((expense) => (
+                            <div
+                              key={expense.id}
+                              className="flex items-center justify-between p-2 sm:p-3 bg-gray-50 rounded-lg"
+                            >
+                              <div className="flex items-center min-w-0 flex-1 mr-3">
+                                <div className="w-6 h-6 sm:w-8 sm:h-8 bg-blue-100 rounded-full flex items-center justify-center mr-2 sm:mr-3 flex-shrink-0">
+                                  <Receipt className="w-3 h-3 sm:w-4 sm:h-4 text-blue-600" />
                                 </div>
-                                <span className="text-sm font-medium text-gray-900">{member.name}</span>
+                                <div className="min-w-0">
+                                  <p className="text-xs sm:text-sm font-medium text-gray-900 truncate">
+                                    {expense.description}
+                                  </p>
+                                  <p className="text-xs text-gray-500 truncate">
+                                    {expense.paidBy?.name}
+                                  </p>
+                                </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <span className={`text-sm font-medium ${
-                                  memberIsSettled ? 'text-green-600' :
-                                  memberBalance < 0 ? 'text-red-600' :
-                                  'text-blue-600'
-                                }`}>
-                                  {memberIsSettled ? 'Settled' :
-                                   memberBalance < 0 ? `Owes ${formatCurrency(Math.abs(memberBalance))}` :
-                                   `Owed ${formatCurrency(memberBalance)}`}
-                                </span>
-                                {member.id !== currentUser.id && (
-                                  <button
-                                    onClick={() => handleRemoveMember(group.id, member.id)}
-                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-all p-1 rounded hover:bg-red-50"
-                                    title="Remove Member"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Recent Expenses Preview */}
-                    {groupExpenses[group.id] && groupExpenses[group.id].length > 0 && (
-                      <div>
-                        <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                          <DollarSign className="w-4 h-4 mr-2" />
-                          Recent Expenses
-                        </h4>
-                        <div className="space-y-2">
-                          {groupExpenses[group.id].slice(0, 3).map(expense => (
-                            <div key={expense.id} className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg">
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">{expense.description}</p>
-                                <p className="text-xs text-gray-500">
-                                  Paid by {expense.paidBy?.name} • {formatDate(expense.createdAt)}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-sm font-semibold text-gray-900">{formatCurrency(expense.amount)}</p>
-                                <p className="text-xs text-gray-500">
-                                  Your share: {formatCurrency(expense.amountPerPerson)}
+                              <div className="text-right flex-shrink-0">
+                                <p className="text-xs sm:text-sm font-semibold text-gray-900">
+                                  {formatCurrency(expense.amount)}
                                 </p>
                               </div>
                             </div>
                           ))}
-                          {groupExpenses[group.id].length > 3 && (
-                            <p className="text-xs text-gray-500 text-center py-2">
-                              +{groupExpenses[group.id].length - 3} more expenses
-                            </p>
-                          )}
                         </div>
-                      </div>
-                    )}
+                      ) : (
+                        <p className="text-xs sm:text-sm text-gray-500 text-center py-3 sm:py-4 bg-gray-50 rounded-lg">
+                          No expenses yet
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
         ) : !loading && (
-          <div className="text-center py-16">
-            <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Users className="w-12 h-12 text-gray-400" />
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No groups yet</h3>
-            <p className="text-gray-600 mb-6">Create your first group to start splitting expenses with friends</p>
+          <div className="text-center py-8 sm:py-12">
+            <Users className="w-16 h-16 sm:w-24 sm:h-24 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg sm:text-xl font-medium text-gray-900 mb-2">No groups yet</h3>
+            <p className="text-sm sm:text-base text-gray-500 mb-6">
+              Create your first group to start splitting expenses with friends
+            </p>
             <button
               onClick={() => setShowCreateGroup(true)}
-              className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+              className="bg-gradient-to-r from-green-500 to-green-600 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 inline-flex items-center space-x-2 shadow-lg hover:shadow-xl transform hover:scale-105"
             >
-              Create Your First Group
+              <Plus className="w-5 h-5" />
+              <span>Create Your First Group</span>
             </button>
           </div>
         )}
@@ -810,8 +1026,9 @@ const Groups = ({ currentUser }) => {
                       <button
                         onClick={() => handleAddMember(user.id)}
                         className="bg-gradient-to-r from-green-500 to-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 hover:from-green-600 hover:to-green-700"
+                        disabled={invitingUserId === user.id}
                       >
-                        Invite
+                        {invitingUserId === user.id ? 'Inviting...' : 'Invite'}
                       </button>
                     </div>
                   ))
@@ -951,6 +1168,15 @@ const Groups = ({ currentUser }) => {
       </div>
     </div>
   );
+};
+
+Groups.propTypes = {
+  currentUser: PropTypes.shape({
+    id: PropTypes.number.isRequired,
+    name: PropTypes.string,
+    email: PropTypes.string,
+    // Add other user fields as needed
+  }).isRequired,
 };
 
 export default Groups;
