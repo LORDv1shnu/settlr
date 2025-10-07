@@ -29,16 +29,16 @@ A modern, full-stack expense splitting application built with **Spring Boot** an
 <div align="center">
 
 ### Login & Authentication
-<img src="screenshots/login.png" alt="Login Screen" width="400">
+<img src="screenshots/login.png" alt="Login Screen" width="800">
 
 ### Dashboard Overview
-<img src="screenshots/dash.png" alt="Dashboard" width="400">
+<img src="screenshots/dash.png" alt="Dashboard" width="800">
 
 ### Group Management
-<img src="screenshots/groups.png" alt="Groups Management" width="400">
+<img src="screenshots/groups.png" alt="Groups Management" width="800">
 
 ### Settlement Interface
-<img src="screenshots/settle.png" alt="Settle Up Interface" width="400">
+<img src="screenshots/settle.png" alt="Settle Up Interface" width="800">
 
 </div>
 
