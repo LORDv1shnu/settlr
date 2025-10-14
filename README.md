@@ -10,7 +10,7 @@ This repository contains the **new, migrated version** of Settlr, designed to ad
 
 > **Looking for the original version?**  
 > The prototype we built during our sophomore year is archived here:  
-> 🔗 [Settlr v0 (Archived)](https://github.com/yourusername/settlr-v0)
+> 🔗 [Settlr v0 (Archived)](github.com/LORDv1shnu/settlr-v0)
 
 ---
 
