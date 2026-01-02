@@ -1,4 +1,6 @@
-# Settlr
+# Settlr 
+
+Development Started
 
 **Settlr** is a next-generation group expense management app — rebuilt from the ground up with modern architecture, enhanced performance, and scalability at its core.
 
